@@ -76,6 +76,7 @@ function StatCard({ title, value, sub }) {
 }
 
 function MiniSeriesTable({ title, series }) {
+  const safeSeries = Array.isArray(series) ? series : [];
   return (
     <div className="mp-card">
       <div className="mp-card-title">{title}</div>
@@ -88,10 +89,10 @@ function MiniSeriesTable({ title, series }) {
             </tr>
           </thead>
           <tbody>
-            {series.length === 0 ? (
+            {safeSeries.length === 0 ? (
               <tr><td colSpan={2} className="mp-muted">Žádná data</td></tr>
             ) : (
-              series.map((row) => (
+              safeSeries.map((row) => (
                 <tr key={row.date}>
                   <td>{row.date}</td>
                   <td style={{ textAlign: 'right' }}>{formatNumber(row.value)}</td>

@@ -178,13 +178,20 @@ export function computeOverview({ fromISO, toISO }) {
 
   const calculations = calcSessions.length;
   const orders = orderSessions.length;
-  const conversion = calculations > 0 ? orders / calculations : 0;
+  const conversion_rate = calculations > 0 ? orders / calculations : 0;
 
-  const avgPrice = calculations > 0 ? calcSessions.reduce((a, s) => a + (s.summary.price_total || 0), 0) / calculations : 0;
-  const avgTime = calculations > 0 ? calcSessions.reduce((a, s) => a + (s.summary.print_time_seconds || 0), 0) / calculations : 0;
-  const avgWeight = calculations > 0 ? calcSessions.reduce((a, s) => a + (s.summary.weight_g || 0), 0) / calculations : 0;
+  const sumCalcPrice = calcSessions.reduce((a, s) => a + (s.summary?.price_total || 0), 0);
+  const sumCalcTimeSec = calcSessions.reduce((a, s) => a + (s.summary?.print_time_seconds || 0), 0);
+  const sumCalcWeight = calcSessions.reduce((a, s) => a + (s.summary?.weight_g || 0), 0);
 
-  // daily buckets for PRICE_SHOWN and conversions
+  const avg_price = calculations > 0 ? sumCalcPrice / calculations : 0;
+  const avg_time_min = calculations > 0 ? (sumCalcTimeSec / calculations) / 60 : 0;
+  const avg_weight_g = calculations > 0 ? sumCalcWeight / calculations : 0;
+
+  const revenue_estimate = orderSessions.reduce((a, s) => a + (s.summary?.price_total || 0), 0);
+  const avg_order_value = orders > 0 ? revenue_estimate / orders : 0;
+
+  // Daily buckets for PRICE_SHOWN and conversions
   const dayMap = new Map();
   for (const s of sessions) {
     const day = bucketDayISO(toMs(s.last_event_at));
@@ -193,41 +200,75 @@ export function computeOverview({ fromISO, toISO }) {
     if (s.converted) prev.orders += 1;
     dayMap.set(day, prev);
   }
-  const days = [...dayMap.values()].sort((a, b) => (a.day < b.day ? -1 : 1));
 
-  // top breakdowns
-  function topBy(field) {
+  const days = [...dayMap.values()]
+    .sort((a, b) => (a.day < b.day ? -1 : 1))
+    .map((d) => ({ date: d.day, calculations: d.calculations, orders: d.orders }));
+
+  const calculations_per_day = days.map((d) => ({ date: d.date, value: d.calculations }));
+  const orders_per_day = days.map((d) => ({ date: d.date, value: d.orders }));
+
+  // Top breakdowns
+  function topCounts(field) {
     const m = new Map();
     for (const s of calcSessions) {
-      const k = s.summary[field] || '—';
+      const k = s.summary?.[field] || '—';
       m.set(k, (m.get(k) || 0) + 1);
     }
-    return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ key: k, count: v }));
+    return [...m.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([k, v]) => ({ key: k, count: v }));
   }
 
-  const topMaterials = topBy('material');
-  const topPresets = topBy('preset');
+  function topWithConversion(field) {
+    const calcMap = new Map();
+    const orderMap = new Map();
+    for (const s of calcSessions) {
+      const k = s.summary?.[field] || '—';
+      calcMap.set(k, (calcMap.get(k) || 0) + 1);
+      if (s.converted) orderMap.set(k, (orderMap.get(k) || 0) + 1);
+    }
+    return [...calcMap.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([k, count]) => ({
+        key: k,
+        count,
+        conversion_rate: count > 0 ? (orderMap.get(k) || 0) / count : 0,
+      }));
+  }
 
-  // fees usage
+  const topMaterials = topCounts('material');
+  const topPresets = topWithConversion('preset');
+
+  // Fees usage
   const feeMap = new Map();
   for (const s of calcSessions) {
-    for (const fid of s.summary.fees_selected || []) {
+    for (const fid of s.summary?.fees_selected || []) {
       feeMap.set(fid, (feeMap.get(fid) || 0) + 1);
     }
   }
-  const topFees = [...feeMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ key: k, count: v }));
+  const topFees = [...feeMap.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([k, v]) => ({ key: k, count: v }));
 
   return {
     metrics: {
       calculations,
       orders,
-      conversion,
-      avgPrice,
-      avgTime,
-      avgWeight,
+      conversion_rate,
+      avg_price,
+      avg_time_min,
+      avg_weight_g,
+      revenue_estimate,
+      avg_order_value,
     },
     series: {
       days,
+      calculations_per_day,
+      orders_per_day,
     },
     top: {
       materials: topMaterials,
@@ -236,6 +277,7 @@ export function computeOverview({ fromISO, toISO }) {
     },
   };
 }
+
 
 export function findLostSessions({ fromISO, toISO, olderThanMinutes = 30 }) {
   const sessions = filterSessionsByRange(getAnalyticsSessions(), { fromISO, toISO });

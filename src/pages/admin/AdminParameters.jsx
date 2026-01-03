@@ -167,7 +167,7 @@ function Toggle({ checked, onChange, disabled = false, label, hint, rightSlot })
         {hint && <div className="toggle-hint">{hint}</div>}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .toggle {
           display: flex;
           align-items: flex-start;
@@ -233,7 +233,7 @@ function Toggle({ checked, onChange, disabled = false, label, hint, rightSlot })
 function Badge({ children, tone = 'gray' }) {
   return (
     <span className={`badge ${tone}`}>{children}
-      <style jsx>{`
+      <style>{`
         .badge {
           display: inline-flex;
           align-items: center;
@@ -267,7 +267,7 @@ function ConfirmModal({ open, title, description, confirmText = 'Confirm', cance
           <button className={`btn primary ${danger ? 'danger' : ''}`} onClick={onConfirm}>{confirmText}</button>
         </div>
       </div>
-      <style jsx>{`
+      <style>{`
         .modal-backdrop {
           position: fixed;
           inset: 0;
@@ -330,7 +330,7 @@ function Hint({ children }) {
     <div className="hint">
       <Icon name="Info" size={16} />
       <span>{children}</span>
-      <style jsx>{`
+      <style>{`
         .hint {
           display: inline-flex;
           align-items: center;
@@ -566,7 +566,7 @@ function LibraryPage({ language, defsByKey, draft, persisted, onPatchDraft, onRe
         onCancel={() => setConfirm({ open: false, action: null, title: '', description: '' })}
       />
 
-      <style jsx>{`
+      <style>{`
         .toolbar {
           position: sticky;
           top: 0;
@@ -868,8 +868,8 @@ function ParamRow({ def, row, selected, onToggleSelected, onChange, language }) 
         </label>
 
         <div className="title">
-          <div className="label" title={def.label}>
-            {def.label}
+          <div className="label" title={getLabel(def, language)}>
+            {getLabel(def, language)}
           </div>
           <div className="key" title={def.key}>
             {def.key}
@@ -938,7 +938,7 @@ function ParamRow({ def, row, selected, onToggleSelected, onChange, language }) 
         {hasError ? <div className="error">{row.validation_error}</div> : null}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .paramCard {
           background: #fff;
           border: 1px solid #e5e7eb;
@@ -1174,7 +1174,7 @@ function OverviewPage({ language, draft }) {
         )}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .grid {
           display: grid;
           grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1263,7 +1263,7 @@ function KpiCard({ title, value, icon }) {
         <div className="title">{title}</div>
         <div className="value">{value}</div>
       </div>
-      <style jsx>{`
+      <style>{`
         .kpi {
           background: #fff;
           border: 1px solid #E5E7EB;
@@ -1387,7 +1387,7 @@ function WidgetPage({ language, draft, onPatchDraft }) {
         ))}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .top {
           margin-bottom: 14px;
         }
@@ -1634,7 +1634,7 @@ function WidgetRow({ language, def, libraryRow, widgetRow, enabled, onChange }) 
         )}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .row {
           background: #fff;
           border: 1px solid #E5E7EB;
@@ -1792,7 +1792,7 @@ function ValidationPage({ language }) {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .banner {
           display: flex;
           align-items: center;
@@ -2108,7 +2108,7 @@ export default function AdminParameters() {
         onCancel={() => setConfirmResetAllOpen(false)}
       />
 
-      <style jsx>{`
+      <style>{`
         .admin-parameters {
           max-width: 1100px;
         }
