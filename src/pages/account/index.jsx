@@ -439,7 +439,7 @@ const AccountPage = () => {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .account-page {
           min-height: calc(100vh - 64px);
           background: #f9fafb;

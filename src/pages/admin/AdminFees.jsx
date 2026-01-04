@@ -1002,7 +1002,7 @@ const AdminFees = () => {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .admin-page {
           padding: 24px;
           max-width: 1200px;

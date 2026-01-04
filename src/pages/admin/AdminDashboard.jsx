@@ -95,7 +95,7 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .admin-dashboard {
           max-width: 1400px;
         }

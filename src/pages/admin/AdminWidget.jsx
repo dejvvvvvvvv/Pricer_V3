@@ -859,7 +859,7 @@ const AdminWidget = () => {
         </div>
       ) : null}
 
-      <style jsx>{`
+      <style>{`
         .admin-page { padding: 20px; }
         .loading { padding: 40px; text-align: center; }
 

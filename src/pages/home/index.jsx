@@ -247,7 +247,7 @@ const Home = () => {
         </div>
       </section>
 
-      <style jsx>{`
+      <style>{`
         .home-page {
           width: 100%;
         }

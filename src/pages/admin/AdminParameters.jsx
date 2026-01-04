@@ -366,6 +366,7 @@ function LibraryPage({ language, defsByKey, draft, persisted, onPatchDraft, onRe
   const [onlyActive, setOnlyActive] = useState(false);
   const [onlyChanged, setOnlyChanged] = useState(false);
   const [typeFilter, setTypeFilter] = useState('');
+  const [levelFilter, setLevelFilter] = useState('basic');
   const [confirm, setConfirm] = useState({ open: false, action: null, title: '', description: '' });
 
   const groups = useMemo(() => {
@@ -380,6 +381,9 @@ function LibraryPage({ language, defsByKey, draft, persisted, onPatchDraft, onRe
       .filter(def => {
         if (group && def.group !== group) return false;
         if (typeFilter && def.dataType !== typeFilter) return false;
+        const _lvlOrder = { basic: 0, mid: 1, pro: 2 };
+        const _defLvl = def.uiLevel || 'pro';
+        if (_lvlOrder[_defLvl] > _lvlOrder[levelFilter || 'basic']) return false;
 
         const row = draft.parameters[def.key];
         if (!row) return false;
@@ -464,6 +468,12 @@ function LibraryPage({ language, defsByKey, draft, persisted, onPatchDraft, onRe
               <option value="boolean">boolean</option>
               <option value="enum">enum</option>
               <option value="string">string</option>
+            </select>
+
+            <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)}>
+              <option value="basic">{language === 'cs' ? 'Úroveň: Basic' : 'Level: Basic'}</option>
+              <option value="mid">{language === 'cs' ? 'Úroveň: Mid' : 'Level: Mid'}</option>
+              <option value="pro">{language === 'cs' ? 'Úroveň: Pro' : 'Level: Pro'}</option>
             </select>
 
             <button className={`chip ${onlyActive ? 'on' : ''}`} onClick={() => setOnlyActive(v => !v)}>
@@ -780,7 +790,7 @@ function ParamRow({ def, row, selected, onToggleSelected, onChange, language }) 
 
   function renderValueInput() {
     // boolean
-    if (def.type === 'boolean') {
+    if (def.dataType === 'boolean') {
       const v = value === null ? '__default__' : String(value);
       return (
         <select
@@ -799,7 +809,7 @@ function ParamRow({ def, row, selected, onToggleSelected, onChange, language }) 
     }
 
     // enum
-    if (def.type === 'enum') {
+    if (def.dataType === 'enum') {
       const v = value === null ? '__default__' : String(value);
       return (
         <select
@@ -821,7 +831,7 @@ function ParamRow({ def, row, selected, onToggleSelected, onChange, language }) 
     }
 
     // number-like
-    if (def.type === 'number' || def.type === 'percentage') {
+    if (def.dataType === 'number') {
       const v = value === null ? '' : String(value);
       return (
         <input
@@ -876,7 +886,7 @@ function ParamRow({ def, row, selected, onToggleSelected, onChange, language }) 
           </div>
 
           <div className="badges">
-            <span className="badge">{def.type}</span>
+            <span className="badge">{def.dataType}</span>
             {isChanged ? (
               <span className="badge changed">
                 {language === 'cs' ? 'změněno' : 'changed'}

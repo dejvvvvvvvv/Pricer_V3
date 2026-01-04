@@ -164,7 +164,7 @@ const Pricing = () => {
         </div>
       </section>
 
-      <style jsx>{`
+      <style>{`
         .pricing-page {
           width: 100%;
         }

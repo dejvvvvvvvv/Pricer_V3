@@ -454,7 +454,7 @@ function OrdersList({ orders, setOrders }) {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .orders { max-width: 1200px; }
         .page-header { display:flex; align-items:flex-end; justify-content:space-between; gap: 12px; margin-bottom: 18px; }
         h1 { margin: 0 0 6px 0; font-size: 28px; font-weight: 800; color: #111827; }
@@ -544,7 +544,7 @@ function OrderDetail({ orders, setOrders }) {
           </button>
         </div>
         <div className="empty">Objednávka nenalezena.</div>
-        <style jsx>{`.panel{background:white;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)}.empty{padding:18px;color:#6B7280}`}</style>
+        <style>{`.panel{background:white;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.1)}.empty{padding:18px;color:#6B7280}`}</style>
       </div>
     );
   }
@@ -899,7 +899,7 @@ function OrderDetail({ orders, setOrders }) {
         onCancel={() => setConfirm(null)}
       />
 
-      <style jsx>{`
+      <style>{`
         .detail { max-width: 1200px; }
         .header { display:flex; align-items:center; gap: 12px; margin-bottom: 12px; }
         .title { flex:1; }
@@ -1254,7 +1254,7 @@ function ModelDetail({ orders, setOrders }) {
         onCancel={() => setConfirm(null)}
       />
 
-      <style jsx>{`
+      <style>{`
         .model-detail { max-width: 1200px; }
         .header { display:flex; align-items:center; gap: 12px; margin-bottom: 12px; }
         .title { flex:1; }

@@ -590,7 +590,7 @@ const AdminBranding = () => {
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .admin-branding {
           max-width: 1400px;
         }

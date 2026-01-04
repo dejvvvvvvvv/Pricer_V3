@@ -236,7 +236,7 @@ const Support = () => {
         </div>
       </section>
 
-      <style jsx>{`
+      <style>{`
         .support-page {
           width: 100%;
         }

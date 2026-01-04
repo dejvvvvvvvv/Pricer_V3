@@ -61,7 +61,7 @@ const AdminLayout = () => {
         <Outlet />
       </main>
 
-      <style jsx>{`
+      <style>{`
         .admin-layout {
           display: flex;
           min-height: 100vh;

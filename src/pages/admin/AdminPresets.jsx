@@ -152,11 +152,17 @@ function PresetsList() {
       mapped[k] = coerceIniValue(raw, def.dataType);
     }
 
+    // Keep ALL parsed keys for future exact slicing. Keys not present in our catalog
+    // are stored as unknown_* and are still preserved in raw_ini/raw_values.
+    const unknown_values = {};
+    for (const k of unknown) unknown_values[k] = kv[k];
     setImportState({
       filename: file.name,
       raw_ini: text,
+      all: kv,
       mapped,
       unknown,
+      unknown_values,
       meta: {
         name: file.name.replace(/\.ini$/i, ''),
         description: '',
@@ -177,8 +183,10 @@ function PresetsList() {
       order: Number(importState.meta.order) || 10,
       is_default_selected: Boolean(importState.meta.is_default_selected),
       values: importState.mapped,
+      raw_values: importState.all,
       raw_ini: importState.raw_ini,
       unknown_keys: importState.unknown,
+      unknown_values: importState.unknown_values,
       created_at: nowIso(),
       updated_at: nowIso(),
     };
@@ -350,6 +358,25 @@ function PresetDetail() {
 
   const [tab, setTab] = useState('diff');
   const [draft, setDraft] = useState(() => (preset ? JSON.parse(JSON.stringify(preset)) : null));
+
+const rawAll = useMemo(() => {
+  if (!draft) return {};
+  if (draft.raw_values && typeof draft.raw_values === 'object') return draft.raw_values;
+  if (draft.raw_ini && typeof draft.raw_ini === 'string') return parseIniToKeyValue(draft.raw_ini);
+  return draft.values || {};
+}, [draft]);
+
+const unknownPairs = useMemo(() => {
+  if (!draft) return {};
+  if (draft.unknown_values && typeof draft.unknown_values === 'object') return draft.unknown_values;
+  if (draft.unknown_keys && Array.isArray(draft.unknown_keys)) {
+    const o = {};
+    for (const k of draft.unknown_keys) o[k] = rawAll?.[k];
+    return o;
+  }
+  return {};
+}, [draft, rawAll]);
+
 
   useEffect(() => {
     setPresets(readPresets());
@@ -563,7 +590,10 @@ function PresetDetail() {
               {draft.unknown_keys?.length ? (
                 <div className="unknown">
                   <p className="muted">Tyto klíče z .ini nejsou v katalogu parametrů (zatím).</p>
-                  <pre>{draft.unknown_keys.join('\n')}</pre>
+                  <pre>{Object.entries(unknownPairs)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([k, v]) => `${k}=${v ?? ''}`)
+                    .join('\n')}</pre>
                 </div>
               ) : (
                 <div className="empty">
@@ -676,7 +706,7 @@ function ImportModal({ state, onClose, onChange, onImport }) {
 
           {unknownCount > 0 && (
             <div className="unknownBox">
-              <div className="unknownTitle">Unknown keys (will be ignored)</div>
+              <div className="unknownTitle">Unknown keys (saved in RAW preset; not editable yet)</div>
               <div className="unknownList">
                 {state.unknown.slice(0, 20).join(', ')}{state.unknown.length > 20 ? '…' : ''}
               </div>
