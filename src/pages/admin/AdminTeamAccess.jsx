@@ -188,10 +188,10 @@ export default function AdminTeamAccess() {
               <div className="text-xs text-gray-600">Seat limit</div>
               <div className="text-sm font-semibold">{seatUsed}/{seatLimit}</div>
             </div>
-            <button
-              onClick={() => setInviteOpen(true)}
-              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 transition text-sm font-semibold flex items-center gap-2"
-            >
+              <button
+                onClick={() => setInviteOpen(true)}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 transition text-white text-sm font-semibold flex items-center gap-2 shadow-sm"
+              >
               <Icon name="userPlus" size={18} />
               Invite user
             </button>
@@ -251,11 +251,11 @@ export default function AdminTeamAccess() {
                   <div className="text-xs text-gray-600">Invite = demo: copy link & accept</div>
                 </div>
                 <button
-                  onClick={() => setInviteOpen(true)}
-                  className="px-3 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 border border-gray-200 text-sm"
-                >
-                  Invite user
-                </button>
+            onClick={() => setInviteOpen(true)}
+            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 border border-emerald-600 text-white text-sm font-semibold shadow-sm"
+          >
+            Invite user
+          </button>
               </div>
 
               <div className="overflow-x-auto">
@@ -297,28 +297,28 @@ export default function AdminTeamAccess() {
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-2">
                             {u.status === 'active' ? (
-                              <button
-                                onClick={() => confirmAnd('Disable user?', () => disableUser(u.id))}
-                                className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-200"
-                              >
-                                Disable
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => confirmAnd('Enable user?', () => enableUser(u.id))}
-                                className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-200"
-                              >
-                                Enable
-                              </button>
-                            )}
+              <button
+                onClick={() => confirmAnd('Disable user?', () => disableUser(u.id))}
+                className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-medium"
+              >
+                Disable
+              </button>
+            ) : (
+              <button
+                onClick={() => confirmAnd('Enable user?', () => enableUser(u.id))}
+                className="px-3 py-1.5 rounded-lg bg-green-50 hover:bg-green-100 border border-green-200 text-green-700 font-medium"
+              >
+                Enable
+              </button>
+            )}
                             <button
-                              onClick={() =>
-                                confirmAnd('Remove user from tenant?', () => deleteUser(u.id))
-                              }
-                              className="px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-100"
-                            >
-                              Remove
-                            </button>
+              onClick={() =>
+                confirmAnd('Remove user from tenant?', () => deleteUser(u.id))
+              }
+              className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-medium"
+            >
+              Remove
+            </button>
                           </div>
                         </td>
                       </tr>
@@ -344,43 +344,43 @@ export default function AdminTeamAccess() {
                             {inv.status === 'pending' && (
                               <>
                                 <button
-                                  onClick={() => {
-                                    const link = `${window.location.origin}/invite/accept?token=${encodeURIComponent(
-                                      inv.token
-                                    )}`;
-                                    copyToClipboard(link);
-                                  }}
-                                  className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-200"
-                                >
-                                  Copy link
-                                </button>
+                  onClick={() => {
+                    const link = `${window.location.origin}/invite/accept?token=${encodeURIComponent(
+                      inv.token
+                    )}`;
+                    copyToClipboard(link);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-medium"
+                >
+                  Copy link
+                </button>
                                 <button
-                                  onClick={() => {
-                                    confirmAnd('Resend invite (new token)?', () => resendInvite(inv.id));
-                                  }}
-                                  className="px-3 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 border border-gray-200"
-                                >
-                                  Resend
-                                </button>
+                  onClick={() => {
+                    confirmAnd('Resend invite (new token)?', () => resendInvite(inv.id));
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-medium"
+                >
+                  Resend
+                </button>
                                 <button
-                                  onClick={() =>
-                                    confirmAnd('Revoke invite?', () => deleteInvite(inv.id))
-                                  }
-                                  className="px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-100"
-                                >
-                                  Revoke
-                                </button>
+                  onClick={() =>
+                    confirmAnd('Revoke invite?', () => deleteInvite(inv.id))
+                  }
+                  className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 font-medium"
+                >
+                  Revoke
+                </button>
                                 <button
-                                  onClick={() => {
-                                    // DEMO: accept without leaving admin
-                                    confirmAnd('Simulate accept invite?', () =>
-                                      acceptInviteToken(inv.token, { name: inv.email.split('@')[0] })
-                                    );
-                                  }}
-                                  className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-100"
-                                >
-                                  Simulate accept
-                                </button>
+                  onClick={() => {
+                    // DEMO: accept without leaving admin
+                    confirmAnd('Simulate accept invite?', () =>
+                      acceptInviteToken(inv.token, { name: inv.email.split('@')[0] })
+                    );
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-medium"
+                >
+                  Simulate accept
+                </button>
                               </>
                             )}
                             {inv.status !== 'pending' && (

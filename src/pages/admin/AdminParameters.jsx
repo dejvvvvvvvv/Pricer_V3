@@ -408,7 +408,7 @@ function LibraryPage({ language, defsByKey, draft, persisted, onPatchDraft, onRe
         if (ga !== gb) return ga.localeCompare(gb);
         return getLabel(a, language).localeCompare(getLabel(b, language));
       });
-  }, [search, group, onlyActive, onlyChanged, typeFilter, draft, language]);
+  }, [search, group, onlyActive, onlyChanged, typeFilter, levelFilter, draft, language]);
 
   const grouped = useMemo(() => {
     const out = {};
