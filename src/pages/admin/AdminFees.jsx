@@ -200,6 +200,11 @@ function typeLabel(type, cs) {
     per_gram: cs ? 'Podle hmotnosti (Kč/g)' : 'Per gram',
     per_minute: cs ? 'Podle času (Kč/min)' : 'Per minute',
     percent: cs ? 'Procento (%)' : 'Percent',
+    per_cm3: cs ? 'Podle objemu (Kč/cm³)' : 'Per volume (CZK/cm³)',
+    per_cm2: cs ? 'Podle povrchu (Kč/cm²)' : 'Per surface (CZK/cm²)',
+    per_model: cs ? 'Za model (Kč/kus)' : 'Per model (CZK/pc)',
+    per_layer: cs ? 'Za vrstvu (Kč/vrstva)' : 'Per layer (CZK/layer)',
+    per_mm_height: cs ? 'Podle výšky (Kč/mm)' : 'Per mm height (CZK/mm)',
   };
   return labels[type] || type;
 }
@@ -581,6 +586,11 @@ const AdminFees = () => {
     if (feeType === 'per_gram') return 'Kč/g';
     if (feeType === 'per_minute') return 'Kč/min';
     if (feeType === 'percent') return '%';
+    if (feeType === 'per_cm3') return 'Kč/cm³';
+    if (feeType === 'per_cm2') return 'Kč/cm²';
+    if (feeType === 'per_model') return 'Kč/kus';
+    if (feeType === 'per_layer') return 'Kč/vrstva';
+    if (feeType === 'per_mm_height') return 'Kč/mm';
     return '';
   };
 
@@ -593,6 +603,11 @@ const AdminFees = () => {
     if (f.type === 'per_gram') return cs ? `${name}: ${value} Kč / g` : `${name}: ${value} CZK / g`;
     if (f.type === 'per_minute') return cs ? `${name}: ${value} Kč / min` : `${name}: ${value} CZK / min`;
     if (f.type === 'percent') return cs ? `${name}: ${value}% ${base}` : `${name}: ${value}% ${base}`;
+    if (f.type === 'per_cm3') return cs ? `${name}: ${value} Kč / cm³ objemu` : `${name}: ${value} CZK / cm³ volume`;
+    if (f.type === 'per_cm2') return cs ? `${name}: ${value} Kč / cm² povrchu` : `${name}: ${value} CZK / cm² surface`;
+    if (f.type === 'per_model') return cs ? `${name}: ${value} Kč / kus` : `${name}: ${value} CZK / piece`;
+    if (f.type === 'per_layer') return cs ? `${name}: ${value} Kč / vrstvu` : `${name}: ${value} CZK / layer`;
+    if (f.type === 'per_mm_height') return cs ? `${name}: ${value} Kč / mm výšky` : `${name}: ${value} CZK / mm height`;
     return name;
   };
 
@@ -823,6 +838,11 @@ const AdminFees = () => {
                     <option value="per_gram">{typeLabel('per_gram', cs)}</option>
                     <option value="per_minute">{typeLabel('per_minute', cs)}</option>
                     <option value="percent">{typeLabel('percent', cs)}</option>
+                    <option value="per_cm3">{typeLabel('per_cm3', cs)}</option>
+                    <option value="per_cm2">{typeLabel('per_cm2', cs)}</option>
+                    <option value="per_model">{typeLabel('per_model', cs)}</option>
+                    <option value="per_layer">{typeLabel('per_layer', cs)}</option>
+                    <option value="per_mm_height">{typeLabel('per_mm_height', cs)}</option>
                   </select>
                   {normalizeFee(activeFee).type === 'percent' ? (
                     <p className="help-text">
