@@ -75,6 +75,42 @@ const AdminDashboard = () => {
     return { activeCount, changedCount };
   }, [refreshKey]);
 
+  // Live data from Pricing (localStorage fallback)
+  const pricingData = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('modelpricer_pricing_config__test-customer-1');
+      if (!raw) return { hourlyRate: 150, materialCount: 0 };
+      const parsed = JSON.parse(raw);
+      
+      const rate = parsed.tenant_pricing?.rate_per_hour ?? parsed.timeRate ?? 150;
+      const materials = Object.keys(parsed.materialPrices || {}).length;
+      return { hourlyRate: rate, materialCount: materials };
+    } catch {
+      return { hourlyRate: 150, materialCount: 0 };
+    }
+  }, [refreshKey]);
+
+  // Live data from Fees (localStorage fallback)
+  const feesData = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('modelpricer_fees_config__test-customer-1');
+      if (!raw) return { totalActive: 0, breakdown: {} };
+      const parsed = JSON.parse(raw);
+      const fees = parsed.fees || [];
+      
+      const activeFees = fees.filter(f => f.active || f.enabled);
+      const breakdown = activeFees.reduce((acc, f) => {
+        const type = f.type || 'flat';
+        acc[type] = (acc[type] || 0) + 1;
+        return acc;
+      }, {});
+
+      return { totalActive: activeFees.length, breakdown };
+    } catch {
+      return { totalActive: 0, breakdown: {} };
+    }
+  }, [refreshKey]);
+
   // Recent activity from Audit Log
   const recentActivity = useMemo(() => {
     const entries = getAuditEntries();
@@ -89,6 +125,21 @@ const AdminDashboard = () => {
 
   const handleRefresh = () => {
     setRefreshKey(k => k + 1);
+  };
+
+  const formatFeeType = (type) => {
+    const map = {
+      flat: 'fix',
+      per_gram: 'Kč/g',
+      per_minute: 'Kč/min',
+      percent: '%',
+      per_cm3: 'Kč/cm³',
+      per_cm2: 'Kč/cm²',
+      per_model: 'Kč/ks',
+      per_layer: 'Kč/vr.',
+      per_mm_height: 'Kč/mm'
+    };
+    return map[type] || type;
   };
 
   const statCards = [
@@ -121,11 +172,27 @@ const AdminDashboard = () => {
       change: `${teamSummary.activeUsers}/${seatLimit} ${language === 'cs' ? 'míst' : 'seats'}`,
     },
     {
-      label: language === 'cs' ? 'Aktivní parametry' : 'Active Parameters',
-      value: parametersData.activeCount,
-      icon: 'Settings',
-      color: '#EC4899',
-      change: `${parametersData.changedCount} ${language === 'cs' ? 'změn' : 'changed'}`,
+      label: language === 'cs' ? 'Cena hodiny' : 'Hourly Rate',
+      value: `${pricingData.hourlyRate} Kč`,
+      icon: 'Clock',
+      color: '#EF4444',
+      change: `${pricingData.materialCount} ${language === 'cs' ? 'materiálů' : 'materials'}`,
+    },
+    {
+      label: language === 'cs' ? 'Aktivní poplatky' : 'Active Fees',
+      value: feesData.totalActive,
+      icon: 'Receipt',
+      color: '#14B8A6',
+      change: language === 'cs' ? 'Detail v přehledu' : 'Detail below',
+      subtext: feesData.totalActive > 0 && (
+        <div className="text-xs text-gray-500 mt-1 flex flex-wrap gap-1">
+          {Object.entries(feesData.breakdown).map(([type, count]) => (
+            <span key={type} className="bg-gray-100 px-1 rounded">
+              {count}x {formatFeeType(type)}
+            </span>
+          ))}
+        </div>
+      )
     },
   ];
 

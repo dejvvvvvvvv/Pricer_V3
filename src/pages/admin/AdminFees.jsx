@@ -1113,8 +1113,8 @@ const AdminFees = () => {
 
         .fees-layout {
           display: grid;
-          grid-template-columns: 1fr 540px;
-          gap: 20px;
+          grid-template-columns: 1fr 420px;
+          gap: 16px;
         }
 
         @media (max-width: 1024px) {
@@ -1360,14 +1360,14 @@ const AdminFees = () => {
         }
 
         .field {
-          margin-top: 18px;
+          margin-top: 10px;
         }
 
         .field label {
           font-size: 13px;
           color: #333;
           display: block;
-          margin-bottom: 8px;
+          margin-bottom: 6px;
           font-weight: 700;
         }
 
@@ -1403,8 +1403,8 @@ const AdminFees = () => {
         .grid-2 {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          gap: 16px;
-          margin-top: 18px;
+          gap: 12px;
+          margin-top: 10px;
         }
 
         @media (max-width: 680px) {
@@ -1421,8 +1421,8 @@ const AdminFees = () => {
 
         .divider {
           height: 1px;
-          background: #e0e0e0;
-          margin: 24px 0;
+          background: #eee;
+          margin: 14px 0;
         }
 
         .toggle {
