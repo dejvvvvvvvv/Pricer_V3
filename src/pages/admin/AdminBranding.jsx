@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '../../components/AppIcon';
 import { useLanguage } from '../../contexts/LanguageContext';
 import {
@@ -107,9 +108,49 @@ const AdminBranding = () => {
         return;
       }
 
-      const saved = saveBranding(customerId, pickEditable(branding), 'admin');
+      const readAsDataUrl = (f) =>
+        new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(f);
+        });
+
+      const rasterToOptimizedDataUrl = async (f) => {
+        // Keep SVG untouched.
+        if (f.type === 'image/svg+xml') return await readAsDataUrl(f);
+        try {
+          const MAX = 512;
+          const bitmap = await createImageBitmap(f);
+          const scale = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height));
+          const w = Math.max(1, Math.round(bitmap.width * scale));
+          const h = Math.max(1, Math.round(bitmap.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, w, h);
+          ctx.drawImage(bitmap, 0, 0, w, h);
+          // Try WEBP first (small), fallback to PNG.
+          const webp = canvas.toDataURL('image/webp', 0.92);
+          if (webp && typeof webp === 'string' && webp.startsWith('data:image')) return webp;
+          return canvas.toDataURL('image/png');
+        } catch {
+          return await readAsDataUrl(f);
+        }
+      };
+
+      // If user selected a logo file but didn't click "Použít", auto-apply it on Save.
+      const brandingToSave = { ...branding };
+      if (logoDraft) {
+        const dataUrl = await rasterToOptimizedDataUrl(logoDraft);
+        brandingToSave.logo = dataUrl;
+      }
+
+      const saved = saveBranding(customerId, pickEditable(brandingToSave), 'admin');
       setBranding(saved);
       setSavedSnapshot(saved);
+      if (logoDraftPreview) URL.revokeObjectURL(logoDraftPreview);
       setLogoDraft(null);
       setLogoDraftPreview(null);
       setLogoDraftError(null);
@@ -174,7 +215,30 @@ const AdminBranding = () => {
           reader.onerror = reject;
           reader.readAsDataURL(f);
         });
-      const dataUrl = await readAsDataUrl(logoDraft);
+
+      const rasterToOptimizedDataUrl = async (f) => {
+        if (f.type === 'image/svg+xml') return await readAsDataUrl(f);
+        try {
+          const MAX = 512;
+          const bitmap = await createImageBitmap(f);
+          const scale = Math.min(1, MAX / Math.max(bitmap.width, bitmap.height));
+          const w = Math.max(1, Math.round(bitmap.width * scale));
+          const h = Math.max(1, Math.round(bitmap.height * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, w, h);
+          ctx.drawImage(bitmap, 0, 0, w, h);
+          const webp = canvas.toDataURL('image/webp', 0.92);
+          if (webp && typeof webp === 'string' && webp.startsWith('data:image')) return webp;
+          return canvas.toDataURL('image/png');
+        } catch {
+          return await readAsDataUrl(f);
+        }
+      };
+
+      const dataUrl = await rasterToOptimizedDataUrl(logoDraft);
       setBranding({ ...branding, logo: dataUrl });
       setLogoDraft(null);
       if (logoDraftPreview) URL.revokeObjectURL(logoDraftPreview);
@@ -274,7 +338,6 @@ const AdminBranding = () => {
               />
               {errors.businessName && <p className="error-text">{errors.businessName}</p>}
               <p className="help-text">{t('admin.branding.businessNameHelp')}</p>
-              {errors.businessName && <p className="error-text">{errors.businessName}</p>}
             </div>
             <div className="form-group">
               <label>{t('admin.branding.tagline')}</label>
@@ -357,7 +420,7 @@ const AdminBranding = () => {
                 {t('admin.branding.chooseFile')}
               </button>
               <button className="btn-primary" onClick={applyLogoDraft} disabled={!logoDraft}>
-                {t('common.upload')}
+                Použít logo
               </button>
               {(branding.logo || logoDraft) && (
                 <button
@@ -376,94 +439,22 @@ const AdminBranding = () => {
             </div>
           </div>
 
-          {/* Color Scheme */}
+          {/* Display in widget */}
           <div className="branding-section">
-            <h3>{t('admin.branding.colorScheme')}</h3>
-            <div className="form-group">
-              <label>{t('admin.branding.primaryColor')}</label>
-              <div className="color-input-group">
-                <input
-                  type="text"
-                  value={branding.primaryColor}
-                  onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
-                  className={errors.primaryColor ? 'input-error' : ''}
-                />
-                <div className="color-swatch" style={{ backgroundColor: branding.primaryColor }}></div>
-              </div>
-              <p className="help-text">{t('admin.branding.primaryColorHelp')}</p>
-              {errors.primaryColor && <p className="error-text">{errors.primaryColor}</p>}
-              {errors.primaryColor && <p className="error-text">{errors.primaryColor}</p>}
+            <div className="section-head-row">
+              <h3 style={{ marginBottom: 0 }}>{t('admin.branding.calculatorSettings')}</h3>
+              <button
+                className="btn-tertiary"
+                onClick={() => (window.location.href = '/admin/widget')}
+                title="Rozložení, embed kód a widget instance se řeší ve Widget Code"
+              >
+                Otevřít Widget
+              </button>
             </div>
-            <div className="form-group">
-              <label>{t('admin.branding.secondaryColor')}</label>
-              <div className="color-input-group">
-                <input
-                  type="text"
-                  value={branding.secondaryColor}
-                  onChange={(e) => setBranding({ ...branding, secondaryColor: e.target.value })}
-                  className={errors.secondaryColor ? 'input-error' : ''}
-                />
-                <div className="color-swatch" style={{ backgroundColor: branding.secondaryColor }}></div>
-              </div>
-              <p className="help-text">{t('admin.branding.secondaryColorHelp')}</p>
-              {errors.secondaryColor && <p className="error-text">{errors.secondaryColor}</p>}
-              {errors.secondaryColor && <p className="error-text">{errors.secondaryColor}</p>}
-            </div>
-            <div className="form-group">
-              <label>{t('admin.branding.backgroundColor')}</label>
-              <div className="color-input-group">
-                <input
-                  type="text"
-                  value={branding.backgroundColor}
-                  onChange={(e) => setBranding({ ...branding, backgroundColor: e.target.value })}
-                  className={errors.backgroundColor ? 'input-error' : ''}
-                />
-                <div className="color-swatch" style={{ backgroundColor: branding.backgroundColor }}></div>
-              </div>
-              <p className="help-text">{t('admin.branding.backgroundColorHelp')}</p>
-              {errors.backgroundColor && <p className="error-text">{errors.backgroundColor}</p>}
-              {errors.backgroundColor && <p className="error-text">{errors.backgroundColor}</p>}
-            </div>
-            <div className="form-group">
-              <label>{t('admin.branding.presets')}</label>
-              <div className="color-presets">
-                {colorPresets.map((preset) => (
-                  <button
-                    key={preset.name}
-                    className="preset-btn"
-                    onClick={() => handleColorPreset(preset)}
-                  >
-                    {preset.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Typography */}
-          <div className="branding-section">
-            <h3>{t('admin.branding.typography')}</h3>
-            <div className="form-group">
-              <label>{t('admin.branding.fontFamily')}</label>
-              <div className="font-options">
-                {fonts.map((font) => (
-                  <label key={font} className="radio-label">
-                    <input
-                      type="radio"
-                      name="font"
-                      checked={branding.fontFamily === font}
-                      onChange={() => setBranding({ ...branding, fontFamily: font })}
-                    />
-                    <span>{font} {font === 'Inter' && '(Default)'}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Calculator Settings */}
-          <div className="branding-section">
-            <h3>{t('admin.branding.calculatorSettings')}</h3>
+            <p className="help-callout">
+              Tip: zde nastavuješ hlavně <strong>logo/barvy/typografii</strong> a co se ukazuje v hlavičce widgetu.
+              Rozměry, embed kód a instance widgetu nastavíš ve stránce <strong>Widget</strong>.
+            </p>
             <div className="checkbox-group">
               <label className="checkbox-label">
                 <input
@@ -505,7 +496,7 @@ const AdminBranding = () => {
                 )}
               </label>
             </div>
-            <div className="form-group">
+            <div className="form-group" style={{ marginTop: 16 }}>
               <label>{t('admin.branding.cornerRadius')} {branding.cornerRadius}px</label>
               <input
                 type="range"
@@ -523,6 +514,89 @@ const AdminBranding = () => {
               </div>
             </div>
           </div>
+
+          {/* Color Scheme */}
+          <div className="branding-section">
+            <h3>{t('admin.branding.colorScheme')}</h3>
+            <div className="form-group">
+              <label>{t('admin.branding.primaryColor')}</label>
+              <div className="color-input-group">
+                <input
+                  type="text"
+                  value={branding.primaryColor}
+                  onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
+                  className={errors.primaryColor ? 'input-error' : ''}
+                />
+                <div className="color-swatch" style={{ backgroundColor: branding.primaryColor }}></div>
+              </div>
+              <p className="help-text">{t('admin.branding.primaryColorHelp')}</p>
+              {errors.primaryColor && <p className="error-text">{errors.primaryColor}</p>}
+            </div>
+            <div className="form-group">
+              <label>{t('admin.branding.secondaryColor')}</label>
+              <div className="color-input-group">
+                <input
+                  type="text"
+                  value={branding.secondaryColor}
+                  onChange={(e) => setBranding({ ...branding, secondaryColor: e.target.value })}
+                  className={errors.secondaryColor ? 'input-error' : ''}
+                />
+                <div className="color-swatch" style={{ backgroundColor: branding.secondaryColor }}></div>
+              </div>
+              <p className="help-text">{t('admin.branding.secondaryColorHelp')}</p>
+              {errors.secondaryColor && <p className="error-text">{errors.secondaryColor}</p>}
+            </div>
+            <div className="form-group">
+              <label>{t('admin.branding.backgroundColor')}</label>
+              <div className="color-input-group">
+                <input
+                  type="text"
+                  value={branding.backgroundColor}
+                  onChange={(e) => setBranding({ ...branding, backgroundColor: e.target.value })}
+                  className={errors.backgroundColor ? 'input-error' : ''}
+                />
+                <div className="color-swatch" style={{ backgroundColor: branding.backgroundColor }}></div>
+              </div>
+              <p className="help-text">{t('admin.branding.backgroundColorHelp')}</p>
+              {errors.backgroundColor && <p className="error-text">{errors.backgroundColor}</p>}
+            </div>
+            <div className="form-group">
+              <label>{t('admin.branding.presets')}</label>
+              <div className="color-presets">
+                {colorPresets.map((preset) => (
+                  <button
+                    key={preset.name}
+                    className="preset-btn"
+                    onClick={() => handleColorPreset(preset)}
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Typography */}
+          <div className="branding-section">
+            <h3>{t('admin.branding.typography')}</h3>
+            <div className="form-group">
+              <label>{t('admin.branding.fontFamily')}</label>
+              <div className="font-options">
+                {fonts.map((font) => (
+                  <label key={font} className="radio-label">
+                    <input
+                      type="radio"
+                      name="font"
+                      checked={branding.fontFamily === font}
+                      onChange={() => setBranding({ ...branding, fontFamily: font })}
+                    />
+                    <span>{font} {font === 'Inter' && '(Default)'}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
         </div>
 
         {/* Right Column - Live Preview */}
@@ -618,6 +692,50 @@ const AdminBranding = () => {
         .header-actions {
           display: flex;
           gap: 12px;
+        }
+
+        .section-head-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding-bottom: 12px;
+          border-bottom: 1px solid #E5E7EB;
+          margin-bottom: 12px;
+        }
+
+        .section-head-row h3 {
+          margin: 0;
+          padding: 0;
+          border: none;
+        }
+
+        .btn-tertiary {
+          padding: 8px 12px;
+          border: 1px solid #E5E7EB;
+          background: #F9FAFB;
+          border-radius: 10px;
+          font-size: 13px;
+          color: #111827;
+          cursor: pointer;
+          transition: all 0.2s;
+          white-space: nowrap;
+        }
+
+        .btn-tertiary:hover {
+          background: #F3F4F6;
+          border-color: #D1D5DB;
+        }
+
+        .help-callout {
+          margin: 0 0 16px 0;
+          padding: 12px 14px;
+          background: #F9FAFB;
+          border: 1px solid #E5E7EB;
+          border-radius: 12px;
+          font-size: 13px;
+          color: #374151;
+          line-height: 1.4;
         }
 
         .branding-grid {
