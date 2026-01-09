@@ -3,6 +3,7 @@ import Header from './components/ui/Header';
 import Footer from './components/ui/Footer';
 import Home from './pages/home';
 import ModelUpload from './pages/model-upload';
+import TestKalkulacka from './pages/test-kalkulacka';
 import Pricing from './pages/pricing';
 import Support from './pages/support';
 import AccountPage from './pages/account';
@@ -36,13 +37,13 @@ export default function Routes() {
           {/* veřejné */}
           <Route path="/" element={<Home />} />
           <Route path="/model-upload" element={<ModelUpload />} />
+          <Route path="/test-kalkulacka" element={<TestKalkulacka />} />
           <Route path="/pricing" element={<Pricing />} />
           <Route path="/support" element={<Support />} />
 
           {/* chráněné - DOČASNĚ VYPNUTO PRO VÝVOJ */}
           {/* <Route element={<PrivateRoute />}> */}
             <Route path="/account" element={<AccountPage />} />
-          <Route path="/invite/accept" element={<InviteAccept />} />
           {/* </Route> */}
 
           {/* Public invite acceptance (demo) */}
