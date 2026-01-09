@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "communprintingapp-3cfac"
-  }
+    "default": "model-pricer"
+  },
+  "targets": {},
+  "etags": {}
 }
