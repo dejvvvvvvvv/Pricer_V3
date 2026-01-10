@@ -504,38 +504,57 @@ const AdminFees = () => {
     let mounted = true;
 
     const load = async () => {
-      setLoading(true);
-      setBanner(null);
-
-      // 1) Load localStorage quickly (if present), then try API as source of truth
+      // 1) Load localStorage quickly (if present)
       const local = tryLoadLocal();
       const hasLocal = !!local?.fees;
+      
       if (hasLocal && mounted) {
         const loadedLocal = (local.fees || []).map((f) => normalizeFee(f));
         setFees(loadedLocal);
         setActiveId(loadedLocal[0]?.id || null);
         setSavedSnapshot(JSON.stringify({ ...local, updated_at: undefined }));
         setTouched(false);
+        // Important: Stop loading immediately if we have local data
+        setLoading(false);
+      } else {
+         // If no local data, keep loading true until API responds
+         setLoading(true);
       }
+      setBanner(null);
 
-      // 2) API (v2 preferred, legacy compatible)
+      // 2) API (v2 preferred, legacy compatible) - BACKGROUND FETCH
       try {
-        const resp = await fetch(`${API_BASE_URL}/api/admin/fees/${customerId}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout for API
+
+        const resp = await fetch(`${API_BASE_URL}/api/admin/fees/${customerId}`, {
+           signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
+        
         if (!mounted) return;
 
         const apiArray = Array.isArray(data?.fees) ? data.fees : Array.isArray(data) ? data : [];
         const loaded = (apiArray || []).map(fromApiFee);
+        
         setFees(loaded);
-        setActiveId(loaded[0]?.id || null);
+        if (!activeId) setActiveId(loaded[0]?.id || null);
 
         const full = { fees: loaded, updated_at: new Date().toISOString() };
         saveLocal(full);
         setSavedSnapshot(JSON.stringify({ ...full, updated_at: undefined }));
         setTouched(false);
+        
+        // If we were waiting for data (no local source), stop loading now
+        setLoading(false);
+
       } catch (e) {
         if (!mounted) return;
+        
+        // If fetch failed/timed out and we have NO local data, initialize empty
         if (!hasLocal) {
           const full = { fees: [], updated_at: new Date().toISOString() };
           saveLocal(full);
@@ -543,16 +562,12 @@ const AdminFees = () => {
           setActiveId(null);
           setSavedSnapshot(JSON.stringify({ ...full, updated_at: undefined }));
           setTouched(false);
+          setLoading(false);
         }
 
-        setBanner({
-          type: 'info',
-          text: cs
-            ? 'Backend není dostupný – používám lokální zálohu (localStorage).'
-            : 'Backend not reachable – using local fallback (localStorage).',
-        });
-      } finally {
-        if (mounted) setLoading(false);
+        // Silent fail on background update, or show small info if desired, but don't block.
+        // If it was a timeout/network error, we just keep using local data.
+        console.warn("Background fee fetch failed or timed out:", e);
       }
     };
 

@@ -29,7 +29,7 @@ export default function Routes() {
   return (
     <BrowserRouter>
       <Header />
-      <main className="pt-16">
+      <main>
         <RouterRoutes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
