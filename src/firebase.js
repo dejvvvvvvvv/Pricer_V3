@@ -4,7 +4,7 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getAnalytics, isSupported as analyticsSupported } from "firebase/analytics";
 
-const env = import.meta?.env ?? {};
+const env = import.meta.env;
 
 const required = [
   "VITE_FIREBASE_API_KEY",

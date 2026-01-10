@@ -65,6 +65,7 @@ const Header = () => {
   const navItems = [
     { label: t('nav.home'), path: '/', icon: 'Home' },
     { label: t('nav.demo'), path: '/model-upload', icon: 'Calculator' },
+    { label: 'Test Kalkulačka', path: '/test-kalkulacka', icon: 'TestTube' },
     { label: t('nav.pricing'), path: '/pricing', icon: 'DollarSign' },
     { label: t('nav.support'), path: '/support', icon: 'HelpCircle' },
     { label: t('nav.admin'), path: '/admin', icon: 'Settings' },
