@@ -1,773 +1,466 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import Icon from '../../components/AppIcon';
 import { useLanguage } from '../../contexts/LanguageContext';
+import Button from '../../components/ui/Button';
+
+import MeshGradient from '../../components/marketing/MeshGradient';
+import Sparkles from '../../components/marketing/Sparkles';
+import MotionNumber from '../../components/marketing/MotionNumber';
+import LogoMarquee from '../../components/marketing/LogoMarquee';
+import SpotlightCard from '../../components/marketing/SpotlightCard';
+import ImageRipple from '../../components/marketing/ImageRipple';
+import ImageReveal from '../../components/marketing/ImageReveal';
+import Accordion from '../../components/marketing/Accordion';
+import Reveal from '../../components/marketing/Reveal';
 
 const Home = () => {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { t } = useLanguage();
 
+  const trustItems = [
+    'PrusaSlicer CLI',
+    'White‑label widget',
+    'Multi‑tenant',
+    'Fees & Markup',
+    'Presets (.ini)',
+    'Limits (X/Y/Z)',
+    'WooCommerce',
+    'Shopify',
+    'Shoptet',
+    'API ready',
+  ];
+
+  const steps = [
+    {
+      icon: 'Upload',
+      title: t('home.how.step1.title'),
+      desc: t('home.how.step1.desc'),
+    },
+    {
+      icon: 'SlidersHorizontal',
+      title: t('home.how.step2.title'),
+      desc: t('home.how.step2.desc'),
+    },
+    {
+      icon: 'Clock',
+      title: t('home.how.step3.title'),
+      desc: t('home.how.step3.desc'),
+    },
+    {
+      icon: 'ShoppingCart',
+      title: t('home.how.step4.title'),
+      desc: t('home.how.step4.desc'),
+    },
+  ];
+
+  const features = [
+    { icon: 'Scissors', title: t('home.features.slicer.title'), desc: t('home.features.slicer.desc') },
+    { icon: 'Calculator', title: t('home.features.pricing.title'), desc: t('home.features.pricing.desc') },
+    { icon: 'BadgePercent', title: t('home.features.presets.title'), desc: t('home.features.presets.desc') },
+    { icon: 'Palette', title: t('home.features.branding.title'), desc: t('home.features.branding.desc') },
+    { icon: 'Ruler', title: t('home.features.limits.title'), desc: t('home.features.limits.desc') },
+    { icon: 'ShoppingBag', title: t('home.features.cart.title'), desc: t('home.features.cart.desc') },
+  ];
+
+  const faqItems = [
+    { q: t('home.faq.q1'), a: t('home.faq.a1') },
+    { q: t('home.faq.q2'), a: t('home.faq.a2') },
+    { q: t('home.faq.q3'), a: t('home.faq.a3') },
+  ];
+
   return (
-    <div className="home-page">
-      {/* HERO SECTION */}
-      <section className="hero">
-        <div className="container">
-          <div className="hero-content">
-            <div className="hero-left">
-              <h1>{t('home.hero.title')}</h1>
-              <h2>{t('home.hero.subtitle')}</h2>
-              <div className="hero-buttons">
-                <Link to="/register" className="btn-primary">{t('home.hero.cta.primary')}</Link>
-                <Link to="/model-upload" className="btn-secondary">{t('home.hero.cta.secondary')}</Link>
+    <div className="bg-background text-foreground">
+      {/* HERO */}
+      <section className="relative overflow-hidden">
+        <MeshGradient />
+
+        <div className="mx-auto max-w-6xl px-4 pb-8 pt-14 sm:pt-20">
+          <div className="grid gap-10 lg:grid-cols-12 lg:items-center">
+            <Reveal className="lg:col-span-6">
+              <div className="relative inline-flex items-center rounded-full border border-border bg-card/60 px-4 py-2 text-xs font-semibold text-muted-foreground backdrop-blur">
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-primary" />
+                  {t('home.trust.main')}
+                </span>
+                <Sparkles className="opacity-40" count={10} />
               </div>
-              <p className="hero-note">{t('home.hero.note')}</p>
-            </div>
-            <div className="hero-right">
-              <div className="mockup-card">
-                <div className="mockup-header">
-                  <div className="mockup-dots">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </div>
-                  <span className="mockup-title">3D Print Calculator</span>
-                </div>
-                <div className="mockup-content">
-                  <div className="upload-area">
-                    <Icon name="Upload" size={32} />
-                    <p>Upload STL Model</p>
-                  </div>
-                  <div className="params">
-                    <div className="param-row">
-                      <span>Material:</span>
-                      <span>PLA</span>
-                    </div>
-                    <div className="param-row">
-                      <span>Quality:</span>
-                      <span>0.2mm</span>
-                    </div>
-                  </div>
-                  <div className="price-display">
-                    <span className="price-label">Total Price:</span>
-                    <span className="price-value">$45</span>
-                  </div>
-                  <button className="mockup-btn">Add to Cart</button>
+
+              <h1 className="mt-6 text-4xl font-bold tracking-tight sm:text-5xl">
+                {t('home.hero.title')}
+              </h1>
+
+              <p className="mt-4 text-lg text-muted-foreground leading-relaxed">
+                {t('home.hero.subtitle')}
+              </p>
+
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                <Button asChild size="lg">
+                  <Link to="/model-upload">
+                    {t('home.hero.cta.primary')}
+                  </Link>
+                </Button>
+
+                <Button asChild variant="outline" size="lg">
+                  <Link to="/pricing">
+                    {t('home.hero.cta.secondary')}
+                  </Link>
+                </Button>
+
+                <div className="hidden sm:flex items-center gap-2 text-sm text-muted-foreground">
+                  <Icon name="ShieldCheck" size={18} />
+                  <span>{t('home.hero.note')}</span>
                 </div>
               </div>
-            </div>
+
+              {/* Metrics */}
+              <div className="mt-10 grid grid-cols-3 gap-4 sm:max-w-lg">
+                <div className="rounded-2xl border border-border bg-card/70 p-4 backdrop-blur">
+                  <div className="text-2xl font-bold">
+                    <MotionNumber value={3} /> <span className="text-base font-semibold text-muted-foreground">kroky</span>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">od uploadu k ceně</div>
+                </div>
+                <div className="rounded-2xl border border-border bg-card/70 p-4 backdrop-blur">
+                  <div className="text-2xl font-bold">
+                    <MotionNumber value={14} /> <span className="text-base font-semibold text-muted-foreground">dní</span>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">zdarma na vyzkoušení</div>
+                </div>
+                <div className="rounded-2xl border border-border bg-card/70 p-4 backdrop-blur">
+                  <div className="text-2xl font-bold">
+                    <MotionNumber value={100} /> <span className="text-base font-semibold text-muted-foreground">%</span>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">brandování widgetu</div>
+                </div>
+              </div>
+            </Reveal>
+
+            <Reveal className="lg:col-span-6" delay={0.08}>
+              <ImageRipple className="rounded-3xl">
+                <div className="relative overflow-hidden rounded-3xl border border-border bg-card/50 shadow-lg backdrop-blur">
+                  <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent" />
+                  <Sparkles className="opacity-35" count={12} />
+
+                  <div className="relative p-6 sm:p-8">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-red-400/80" />
+                        <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/80" />
+                        <span className="h-2.5 w-2.5 rounded-full bg-green-400/80" />
+                      </div>
+                      <div className="text-xs font-semibold text-muted-foreground">
+                        ModelPricer — Live preview
+                      </div>
+                    </div>
+
+                    <div className="mt-6 grid gap-4">
+                      <div className="rounded-2xl border border-border bg-background/60 p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10">
+                            <Icon name="Upload" size={20} />
+                          </div>
+                          <div>
+                            <div className="text-sm font-semibold">STL / OBJ / 3MF</div>
+                            <div className="text-xs text-muted-foreground">Nahraj model a získej cenu během chvilky</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="rounded-2xl border border-border bg-background/60 p-4">
+                          <div className="text-xs text-muted-foreground">Materiál</div>
+                          <div className="mt-1 flex items-center gap-2 text-sm font-semibold">
+                            <span className="h-2 w-2 rounded-full bg-primary" />
+                            PLA / PETG / ABS
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-background/60 p-4">
+                          <div className="text-xs text-muted-foreground">Kvalita</div>
+                          <div className="mt-1 flex items-center gap-2 text-sm font-semibold">
+                            <Icon name="Sparkles" size={16} />
+                            Standard / Fine
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-border bg-background/60 p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-xs text-muted-foreground">Odhad (z PrusaSlicer)</div>
+                            <div className="mt-1 text-sm font-semibold">2h 14m • 46g</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs text-muted-foreground">Cena</div>
+                            <div className="mt-1 text-2xl font-bold">299 Kč</div>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex gap-3">
+                          <Button size="sm" className="flex-1">
+                            <Icon name="ShoppingCart" size={16} className="mr-2" />
+                            Add to cart
+                          </Button>
+                          <Button size="sm" variant="outline" className="flex-1">
+                            <Icon name="SlidersHorizontal" size={16} className="mr-2" />
+                            Parametry
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </ImageRipple>
+            </Reveal>
           </div>
         </div>
-      </section>
 
-      {/* TRUST BAR */}
-      <section className="trust-bar">
-        <div className="container">
-          <p className="trust-main">{t('home.trust.main')}</p>
-          <p className="trust-sub">{t('home.trust.sub')}</p>
+        {/* TRUST STRIP */}
+        <div className="border-t border-border bg-background/60">
+          <div className="mx-auto max-w-6xl px-4 py-6">
+            <Reveal>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm font-semibold">
+                  {t('home.trust.sub')}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {t('home.trust.main')}
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <LogoMarquee items={trustItems} />
+              </div>
+            </Reveal>
+          </div>
         </div>
       </section>
 
       {/* HOW IT WORKS */}
-      <section className="how-it-works">
-        <div className="container">
-          <h2 className="section-title">{t('home.how.title')}</h2>
-          <p className="section-subtitle">{t('home.how.subtitle')}</p>
-          <div className="steps-grid">
-            <div className="step-card">
-              <div className="step-number">1</div>
-              <h3>{t('home.how.step1.title')}</h3>
-              <p>{t('home.how.step1.desc')}</p>
-            </div>
-            <div className="step-card">
-              <div className="step-number">2</div>
-              <h3>{t('home.how.step2.title')}</h3>
-              <p>{t('home.how.step2.desc')}</p>
-            </div>
-            <div className="step-card">
-              <div className="step-number">3</div>
-              <h3>{t('home.how.step3.title')}</h3>
-              <p>{t('home.how.step3.desc')}</p>
-            </div>
-            <div className="step-card">
-              <div className="step-number">4</div>
-              <h3>{t('home.how.step4.title')}</h3>
-              <p>{t('home.how.step4.desc')}</p>
-            </div>
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+        <Reveal>
+          <div className="max-w-2xl">
+            <h2 className="text-3xl font-bold tracking-tight">{t('home.how.title')}</h2>
+            <p className="mt-3 text-muted-foreground leading-relaxed">{t('home.how.subtitle')}</p>
           </div>
+        </Reveal>
+
+        <div className="mt-10 grid gap-6 md:grid-cols-2">
+          {steps.map((s, idx) => (
+            <Reveal key={s.title} delay={idx * 0.05}>
+              <SpotlightCard>
+                <div className="flex items-start gap-4">
+                  <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary/10">
+                    <Icon name={s.icon} size={22} />
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold">{s.title}</div>
+                    <div className="mt-1 text-sm text-muted-foreground leading-relaxed">{s.desc}</div>
+                  </div>
+                </div>
+              </SpotlightCard>
+            </Reveal>
+          ))}
         </div>
       </section>
 
       {/* FEATURES */}
-      <section className="features">
-        <div className="container">
-          <h2 className="section-title">{t('home.features.title')}</h2>
-          <div className="features-grid">
-            <div className="feature-box">
-              <div className="feature-icon">
-                <Icon name="Cpu" size={32} />
-              </div>
-              <h3>{t('home.features.slicer.title')}</h3>
-              <p>{t('home.features.slicer.desc')}</p>
-            </div>
-            <div className="feature-box">
-              <div className="feature-icon">
-                <Icon name="DollarSign" size={32} />
-              </div>
-              <h3>{t('home.features.pricing.title')}</h3>
-              <p>{t('home.features.pricing.desc')}</p>
-            </div>
-            <div className="feature-box">
-              <div className="feature-icon">
-                <Icon name="Layers" size={32} />
-              </div>
-              <h3>{t('home.features.presets.title')}</h3>
-              <p>{t('home.features.presets.desc')}</p>
-            </div>
-            <div className="feature-box">
-              <div className="feature-icon">
-                <Icon name="Maximize2" size={32} />
-              </div>
-              <h3>{t('home.features.limits.title')}</h3>
-              <p>{t('home.features.limits.desc')}</p>
-            </div>
-            <div className="feature-box">
-              <div className="feature-icon">
-                <Icon name="Palette" size={32} />
-              </div>
-              <h3>{t('home.features.branding.title')}</h3>
-              <p>{t('home.features.branding.desc')}</p>
-            </div>
-            <div className="feature-box">
-              <div className="feature-icon">
-                <Icon name="ShoppingCart" size={32} />
-              </div>
-              <h3>{t('home.features.cart.title')}</h3>
-              <p>{t('home.features.cart.desc')}</p>
-            </div>
+      <section className="border-t border-border bg-background/40">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+          <Reveal>
+            <h2 className="text-3xl font-bold tracking-tight">{t('home.features.title')}</h2>
+          </Reveal>
+
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((f, idx) => (
+              <Reveal key={f.title} delay={idx * 0.04}>
+                <SpotlightCard>
+                  <div className="flex items-start gap-4">
+                    <div className="grid h-11 w-11 place-items-center rounded-2xl bg-primary/10">
+                      <Icon name={f.icon} size={20} />
+                    </div>
+                    <div>
+                      <div className="font-semibold">{f.title}</div>
+                      <div className="mt-1 text-sm text-muted-foreground leading-relaxed">{f.desc}</div>
+                    </div>
+                  </div>
+                </SpotlightCard>
+              </Reveal>
+            ))}
           </div>
         </div>
       </section>
 
       {/* DEMO PREVIEW */}
-      <section className="demo-preview">
-        <div className="container">
-          <h2 className="section-title">{t('home.demo.title')}</h2>
-          <p className="section-subtitle">{t('home.demo.subtitle')}</p>
-          <div className="demo-container">
-            <div className="demo-widget">
-              <h3>Demo Calculator</h3>
-              <div className="demo-upload">
-                <Icon name="Upload" size={48} />
-                <p>Upload STL Model</p>
-              </div>
-              <div className="demo-params">
-                <select>
-                  <option>Material: PLA</option>
-                  <option>Material: PETG</option>
-                  <option>Material: ABS</option>
-                </select>
-                <select>
-                  <option>Quality: 0.2mm</option>
-                  <option>Quality: 0.1mm</option>
-                  <option>Quality: 0.3mm</option>
-                </select>
-              </div>
-              <div className="demo-price">
-                <span>Estimated Price:</span>
-                <span className="price">$45</span>
-              </div>
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+        <Reveal>
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="max-w-2xl">
+              <h2 className="text-3xl font-bold tracking-tight">{t('home.demo.title')}</h2>
+              <p className="mt-3 text-muted-foreground leading-relaxed">{t('home.demo.subtitle')}</p>
             </div>
+            <Button asChild variant="outline">
+              <Link to="/model-upload">
+                <Icon name="Play" size={16} className="mr-2" />
+                {t('home.demo.cta')}
+              </Link>
+            </Button>
           </div>
-          <div className="demo-cta">
-            <Link to="/register" className="btn-primary-large">{t('home.demo.cta')}</Link>
-          </div>
+        </Reveal>
+
+        <div className="mt-10">
+          <ImageReveal
+            className="shadow-lg"
+            before={
+              <div className="h-full w-full p-6 sm:p-8">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-destructive/10">
+                    <Icon name="Mail" size={18} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold">E‑mail poptávky</div>
+                    <div className="text-xs text-muted-foreground">ruční nacenění, čekání, ztracené leady</div>
+                  </div>
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  <div className="h-10 rounded-xl bg-muted" />
+                  <div className="h-10 rounded-xl bg-muted/70" />
+                  <div className="h-10 rounded-xl bg-muted/50" />
+                </div>
+
+                <div className="mt-6 rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
+                  „Můžete mi prosím poslat cenu za 2 kusy?“
+                </div>
+              </div>
+            }
+            after={
+              <div className="h-full w-full p-6 sm:p-8">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10">
+                    <Icon name="Sparkles" size={18} />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold">Okamžitá cena ve widgetu</div>
+                    <div className="text-xs text-muted-foreground">přesné slicování + pravidla cen</div>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-border bg-card p-4">
+                    <div className="text-xs text-muted-foreground">Čas tisku</div>
+                    <div className="mt-1 text-lg font-semibold">2h 14m</div>
+                  </div>
+                  <div className="rounded-2xl border border-border bg-card p-4">
+                    <div className="text-xs text-muted-foreground">Hmotnost</div>
+                    <div className="mt-1 text-lg font-semibold">46 g</div>
+                  </div>
+                  <div className="sm:col-span-2 rounded-2xl border border-border bg-card p-4 flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-muted-foreground">Cena</div>
+                      <div className="mt-1 text-2xl font-bold">299 Kč</div>
+                    </div>
+                    <Button size="sm">
+                      <Icon name="ShoppingCart" size={16} className="mr-2" />
+                      Add to cart
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            }
+          />
         </div>
       </section>
 
       {/* PRICING TEASER */}
-      <section className="pricing-teaser">
-        <div className="container">
-          <h2>{t('home.pricing.title')}</h2>
-          <p>{t('home.pricing.subtitle')}</p>
-          <Link to="/pricing" className="btn-white">{t('home.pricing.cta')}</Link>
+      <section className="border-t border-border bg-background/40">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+          <div className="grid gap-8 lg:grid-cols-12 lg:items-center">
+            <Reveal className="lg:col-span-7">
+              <h2 className="text-3xl font-bold tracking-tight">{t('home.pricing.title')}</h2>
+              <p className="mt-3 text-muted-foreground leading-relaxed">{t('home.pricing.subtitle')}</p>
+            </Reveal>
+            <Reveal className="lg:col-span-5 lg:justify-self-end" delay={0.08}>
+              <Button asChild size="lg">
+                <Link to="/pricing">
+                  {t('home.pricing.cta')}
+                </Link>
+              </Button>
+            </Reveal>
+          </div>
         </div>
       </section>
 
       {/* FOR WHOM */}
-      <section className="for-whom">
-        <div className="container">
-          <h2 className="section-title">{t('home.audience.title')}</h2>
-          <div className="audience-grid">
-            <div className="audience-box">
-              <div className="audience-icon">
-                <Icon name="Printer" size={40} />
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+        <Reveal>
+          <h2 className="text-3xl font-bold tracking-tight">{t('home.audience.title')}</h2>
+        </Reveal>
+
+        <div className="mt-10 grid gap-6 md:grid-cols-3">
+          <Reveal delay={0.02}>
+            <SpotlightCard>
+              <div className="flex items-start gap-4">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-primary/10">
+                  <Icon name="Store" size={20} />
+                </div>
+                <div>
+                  <div className="font-semibold">{t('home.audience.shops.title')}</div>
+                  <div className="mt-1 text-sm text-muted-foreground leading-relaxed">{t('home.audience.shops.desc')}</div>
+                </div>
               </div>
-              <h3>{t('home.audience.printers.title')}</h3>
-              <p>{t('home.audience.printers.desc')}</p>
-            </div>
-            <div className="audience-box">
-              <div className="audience-icon">
-                <Icon name="Lightbulb" size={40} />
+            </SpotlightCard>
+          </Reveal>
+          <Reveal delay={0.06}>
+            <SpotlightCard>
+              <div className="flex items-start gap-4">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-primary/10">
+                  <Icon name="Factory" size={20} />
+                </div>
+                <div>
+                  <div className="font-semibold">{t('home.audience.studios.title')}</div>
+                  <div className="mt-1 text-sm text-muted-foreground leading-relaxed">{t('home.audience.studios.desc')}</div>
+                </div>
               </div>
-              <h3>{t('home.audience.studios.title')}</h3>
-              <p>{t('home.audience.studios.desc')}</p>
-            </div>
-            <div className="audience-box">
-              <div className="audience-icon">
-                <Icon name="Store" size={40} />
+            </SpotlightCard>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <SpotlightCard>
+              <div className="flex items-start gap-4">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-primary/10">
+                  <Icon name="Printer" size={20} />
+                </div>
+                <div>
+                  <div className="font-semibold">{t('home.audience.printers.title')}</div>
+                  <div className="mt-1 text-sm text-muted-foreground leading-relaxed">{t('home.audience.printers.desc')}</div>
+                </div>
               </div>
-              <h3>{t('home.audience.shops.title')}</h3>
-              <p>{t('home.audience.shops.desc')}</p>
-            </div>
-          </div>
+            </SpotlightCard>
+          </Reveal>
         </div>
       </section>
 
       {/* FAQ */}
-      <section className="faq">
-        <div className="container">
-          <h2 className="section-title">{t('home.faq.title')}</h2>
-          <div className="faq-list">
-            <div className="faq-item">
-              <h3>{t('home.faq.q1')}</h3>
-              <p>{t('home.faq.a1')}</p>
+      <section className="border-t border-border bg-background/40">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+          <Reveal>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="max-w-2xl">
+                <h2 className="text-3xl font-bold tracking-tight">FAQ</h2>
+                <p className="mt-3 text-muted-foreground leading-relaxed">{t('home.faq.more')}</p>
+              </div>
+              <Button asChild variant="outline">
+                <Link to="/support">
+                  <Icon name="LifeBuoy" size={16} className="mr-2" />
+                  Support
+                </Link>
+              </Button>
             </div>
-            <div className="faq-item">
-              <h3>{t('home.faq.q2')}</h3>
-              <p>{t('home.faq.a2')}</p>
-            </div>
-            <div className="faq-item">
-              <h3>{t('home.faq.q3')}</h3>
-              <p>{t('home.faq.a3')}</p>
-            </div>
-          </div>
-          <div className="faq-cta">
-            <Link to="/support">{t('home.faq.more')}</Link>
+          </Reveal>
+
+          <div className="mt-10">
+            <Accordion items={faqItems} />
           </div>
         </div>
       </section>
-
-      <style>{`
-        .home-page {
-          width: 100%;
-        }
-
-        .container {
-          max-width: 1280px;
-          margin: 0 auto;
-          padding: 0 24px;
-        }
-
-        /* HERO */
-        .hero {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          padding: 120px 0 80px 0;
-          margin-top: -64px;
-          padding-top: 184px;
-        }
-
-        .hero-content {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 60px;
-          align-items: center;
-        }
-
-        .hero-left h1 {
-          font-size: 48px;
-          font-weight: 700;
-          line-height: 1.2;
-          margin: 0 0 24px 0;
-        }
-
-        .hero-left h2 {
-          font-size: 20px;
-          font-weight: 400;
-          line-height: 1.6;
-          margin: 0 0 32px 0;
-          opacity: 0.95;
-        }
-
-        .hero-buttons {
-          display: flex;
-          gap: 16px;
-          margin-bottom: 24px;
-        }
-
-        .btn-primary, .btn-secondary {
-          padding: 16px 32px;
-          border-radius: 8px;
-          font-size: 16px;
-          font-weight: 600;
-          text-decoration: none;
-          display: inline-block;
-          transition: all 0.2s;
-        }
-
-        .btn-primary {
-          background: white;
-          color: #667eea;
-        }
-
-        .btn-primary:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-        }
-
-        .btn-secondary {
-          background: transparent;
-          color: white;
-          border: 2px solid white;
-        }
-
-        .btn-secondary:hover {
-          background: rgba(255,255,255,0.1);
-        }
-
-        .hero-note {
-          font-size: 14px;
-          opacity: 0.8;
-        }
-
-        .mockup-card {
-          background: white;
-          border-radius: 16px;
-          overflow: hidden;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-
-        .mockup-header {
-          background: #f5f5f5;
-          padding: 12px 16px;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .mockup-dots {
-          display: flex;
-          gap: 6px;
-        }
-
-        .mockup-dots span {
-          width: 12px;
-          height: 12px;
-          border-radius: 50%;
-          background: #ddd;
-        }
-
-        .mockup-title {
-          font-size: 13px;
-          color: #666;
-        }
-
-        .mockup-content {
-          padding: 32px;
-          color: #333;
-        }
-
-        .upload-area {
-          border: 2px dashed #ddd;
-          border-radius: 12px;
-          padding: 40px;
-          text-align: center;
-          margin-bottom: 24px;
-          color: #999;
-        }
-
-        .params {
-          margin-bottom: 24px;
-        }
-
-        .param-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 12px 0;
-          border-bottom: 1px solid #f0f0f0;
-        }
-
-        .price-display {
-          background: #f9fafb;
-          padding: 20px;
-          border-radius: 8px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 20px;
-        }
-
-        .price-value {
-          font-size: 28px;
-          font-weight: 700;
-          color: #667eea;
-        }
-
-        .mockup-btn {
-          width: 100%;
-          padding: 14px;
-          background: #667eea;
-          color: white;
-          border: none;
-          border-radius: 8px;
-          font-size: 16px;
-          font-weight: 600;
-          cursor: pointer;
-        }
-
-        /* TRUST BAR */
-        .trust-bar {
-          background: #f9fafb;
-          padding: 40px 0;
-          text-align: center;
-        }
-
-        .trust-main {
-          font-size: 18px;
-          font-weight: 600;
-          color: #111827;
-          margin: 0 0 8px 0;
-        }
-
-        .trust-sub {
-          font-size: 16px;
-          color: #6B7280;
-          margin: 0;
-        }
-
-        /* HOW IT WORKS */
-        .how-it-works {
-          padding: 80px 0;
-        }
-
-        .section-title {
-          font-size: 36px;
-          font-weight: 700;
-          text-align: center;
-          margin: 0 0 16px 0;
-          color: #111827;
-        }
-
-        .section-subtitle {
-          font-size: 18px;
-          text-align: center;
-          color: #6B7280;
-          margin: 0 0 60px 0;
-        }
-
-        .steps-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 32px;
-        }
-
-        .step-card {
-          text-align: center;
-        }
-
-        .step-number {
-          width: 60px;
-          height: 60px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 24px;
-          font-weight: 700;
-          margin: 0 auto 20px auto;
-        }
-
-        .step-card h3 {
-          font-size: 18px;
-          font-weight: 600;
-          margin: 0 0 12px 0;
-          color: #111827;
-        }
-
-        .step-card p {
-          font-size: 14px;
-          color: #6B7280;
-          line-height: 1.6;
-        }
-
-        /* FEATURES */
-        .features {
-          background: #f9fafb;
-          padding: 80px 0;
-        }
-
-        .features-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 32px;
-        }
-
-        .feature-box {
-          background: white;
-          padding: 32px;
-          border-radius: 12px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-
-        .feature-icon {
-          width: 64px;
-          height: 64px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          margin-bottom: 20px;
-        }
-
-        .feature-box h3 {
-          font-size: 20px;
-          font-weight: 600;
-          margin: 0 0 12px 0;
-          color: #111827;
-        }
-
-        .feature-box p {
-          font-size: 14px;
-          color: #6B7280;
-          line-height: 1.6;
-          margin: 0;
-        }
-
-        /* DEMO PREVIEW */
-        .demo-preview {
-          padding: 80px 0;
-        }
-
-        .demo-container {
-          max-width: 600px;
-          margin: 0 auto 40px auto;
-        }
-
-        .demo-widget {
-          background: white;
-          border: 2px solid #e5e7eb;
-          border-radius: 16px;
-          padding: 40px;
-        }
-
-        .demo-widget h3 {
-          text-align: center;
-          margin: 0 0 24px 0;
-          font-size: 24px;
-          color: #111827;
-        }
-
-        .demo-upload {
-          border: 2px dashed #d1d5db;
-          border-radius: 12px;
-          padding: 60px;
-          text-align: center;
-          color: #9ca3af;
-          margin-bottom: 24px;
-        }
-
-        .demo-params {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-          margin-bottom: 24px;
-        }
-
-        .demo-params select {
-          padding: 12px;
-          border: 1px solid #d1d5db;
-          border-radius: 8px;
-          font-size: 14px;
-        }
-
-        .demo-price {
-          background: #f9fafb;
-          padding: 20px;
-          border-radius: 8px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-
-        .demo-price .price {
-          font-size: 28px;
-          font-weight: 700;
-          color: #667eea;
-        }
-
-        .demo-cta {
-          text-align: center;
-        }
-
-        .btn-primary-large {
-          padding: 18px 48px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          border-radius: 8px;
-          font-size: 18px;
-          font-weight: 600;
-          text-decoration: none;
-          display: inline-block;
-          transition: all 0.2s;
-        }
-
-        .btn-primary-large:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
-        }
-
-        /* PRICING TEASER */
-        .pricing-teaser {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          padding: 80px 0;
-          text-align: center;
-        }
-
-        .pricing-teaser h2 {
-          font-size: 36px;
-          font-weight: 700;
-          margin: 0 0 16px 0;
-        }
-
-        .pricing-teaser p {
-          font-size: 18px;
-          margin: 0 0 32px 0;
-          opacity: 0.95;
-        }
-
-        .btn-white {
-          padding: 16px 40px;
-          background: white;
-          color: #667eea;
-          border-radius: 8px;
-          font-size: 16px;
-          font-weight: 600;
-          text-decoration: none;
-          display: inline-block;
-          transition: all 0.2s;
-        }
-
-        .btn-white:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-        }
-
-        /* FOR WHOM */
-        .for-whom {
-          padding: 80px 0;
-        }
-
-        .audience-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 32px;
-        }
-
-        .audience-box {
-          text-align: center;
-          padding: 32px;
-        }
-
-        .audience-icon {
-          width: 80px;
-          height: 80px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          margin: 0 auto 24px auto;
-        }
-
-        .audience-box h3 {
-          font-size: 20px;
-          font-weight: 600;
-          margin: 0 0 12px 0;
-          color: #111827;
-        }
-
-        .audience-box p {
-          font-size: 14px;
-          color: #6B7280;
-          line-height: 1.6;
-        }
-
-        /* FAQ */
-        .faq {
-          background: #f9fafb;
-          padding: 80px 0;
-        }
-
-        .faq-list {
-          max-width: 800px;
-          margin: 0 auto 40px auto;
-        }
-
-        .faq-item {
-          background: white;
-          padding: 32px;
-          border-radius: 12px;
-          margin-bottom: 16px;
-        }
-
-        .faq-item h3 {
-          font-size: 18px;
-          font-weight: 600;
-          margin: 0 0 12px 0;
-          color: #111827;
-        }
-
-        .faq-item p {
-          font-size: 14px;
-          color: #6B7280;
-          line-height: 1.6;
-          margin: 0;
-        }
-
-        .faq-cta {
-          text-align: center;
-        }
-
-        .faq-cta a {
-          color: #667eea;
-          font-weight: 600;
-          text-decoration: none;
-        }
-
-        /* RESPONSIVE */
-        @media (max-width: 768px) {
-          .hero-content {
-            grid-template-columns: 1fr;
-            gap: 40px;
-          }
-
-          .hero-left h1 {
-            font-size: 32px;
-          }
-
-          .hero-buttons {
-            flex-direction: column;
-          }
-
-          .steps-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .features-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .audience-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
     </div>
   );
 };

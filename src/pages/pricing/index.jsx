@@ -1,350 +1,427 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
-import { useLanguage } from '../../contexts/LanguageContext';
+import React from "react";
+import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import { useLanguage } from "../../contexts/LanguageContext";
+import Container from "../../components/ui/Container";
+import Button from "../../components/ui/Button";
+import { TooltipProvider } from "../../components/ui/tooltip";
+import MotionNumber from "../../components/marketing/MotionNumber";
+import PricingPlanCard from "../../components/marketing/PricingPlanCard";
+import FaqTabs from "../../components/marketing/FaqTabs";
+import GlossaryTerm from "../../components/marketing/GlossaryTerm";
+import SupportHoverCards from "../../components/marketing/SupportHoverCards";
+import { getFaqCategories } from "../../data/faq";
+import { getGlossary } from "../../data/glossary";
 
 const Pricing = () => {
   const { t, language } = useLanguage();
-  
+
+  const currency = language === "cs" ? "Kč" : "$";
+
   const plans = [
     {
-      name: t('pricing.plan.starter'),
-      price: '499',
-      period: t('pricing.monthly'),
-      description: language === 'cs' ? 'Pro začínající tiskárny a jednotlivce' : 'For starting print shops and individuals',
-      features: language === 'cs' ? [
-        'Až 100 kalkulací měsíčně',
-        'Základní branding (barvy, logo)',
-        'Email podpora',
-        '1 uživatel',
-        'Základní statistiky'
-      ] : [
-        'Up to 100 calculations/month',
-        'Basic branding (colors, logo)',
-        'Email support',
-        '1 user',
-        'Basic statistics'
-      ],
-      cta: language === 'cs' ? 'Začít zdarma' : 'Start Free',
-      highlighted: false
+      name: t("pricing.plan.starter"),
+      description:
+        language === "cs"
+          ? "Pro začínající tiskárny a jednotlivce"
+          : "For starting print shops and individuals",
+      price: "499",
+      period: t("pricing.monthly"),
+      features:
+        language === "cs"
+          ? [
+              "Až 100 kalkulací měsíčně",
+              "Základní branding (barvy, logo)",
+              "1 widget na web",
+              "Email podpora",
+              "Uložení modelů 2 GB",
+            ]
+          : [
+              "Up to 100 calculations / month",
+              "Basic branding (colors, logo)",
+              "1 widget on your site",
+              "Email support",
+              "2 GB model storage",
+            ],
+      ctaText: language === "cs" ? "Začít zdarma" : "Start free",
+      ctaTo: "/register",
+      highlighted: false,
     },
     {
-      name: t('pricing.plan.professional'),
-      price: '1,299',
-      period: t('pricing.monthly'),
-      description: language === 'cs' ? 'Pro profesionální tiskárny a studia' : 'For professional print shops and studios',
-      features: language === 'cs' ? [
-        'Neomezené kalkulace',
-        'Pokročilé branding (fonty, layout)',
-        'Prioritní podpora',
-        'Až 5 uživatelů',
-        'Pokročilé statistiky a reporty',
-        'API přístup',
-        'Vlastní domény'
-      ] : [
-        'Unlimited calculations',
-        'Advanced branding (fonts, layout)',
-        'Priority support',
-        'Up to 5 users',
-        'Advanced statistics and reports',
-        'API access',
-        'Custom domains'
-      ],
-      cta: language === 'cs' ? 'Vyzkoušet zdarma' : 'Try Free',
-      highlighted: true
+      name: t("pricing.plan.professional"),
+      description:
+        language === "cs"
+          ? "Pro aktivní tiskárny, které chtějí automatizovat nacenění"
+          : "For busy shops that want automated quoting",
+      price: "999",
+      period: t("pricing.monthly"),
+      features:
+        language === "cs"
+          ? [
+              "Až 500 kalkulací měsíčně",
+              "Plný branding + vlastní doména widgetu",
+              "Neomezené widgety",
+              "Pokročilé poplatky a pravidla (minima, zaokrouhlení)",
+              "Prioritní podpora",
+              "Uložení modelů 5 GB",
+            ]
+          : [
+              "Up to 500 calculations / month",
+              "Full branding + custom widget domain",
+              "Unlimited widgets",
+              "Advanced fees & rules (minima, rounding)",
+              "Priority support",
+              "5 GB model storage",
+            ],
+      ctaText: language === "cs" ? "Vyzkoušet zdarma" : "Try free",
+      ctaTo: "/register",
+      highlighted: true,
     },
     {
-      name: t('pricing.plan.enterprise'),
-      price: t('pricing.custom'),
-      period: '',
-      description: language === 'cs' ? 'Pro velké tiskárny a e-shopy' : 'For large print shops and e-shops',
-      features: language === 'cs' ? [
-        'Vše z Professional',
-        'White-label řešení',
-        'Dedikovaný account manager',
-        'Neomezený počet uživatelů',
-        'SLA 99.9%',
-        'Custom integrace',
-        'On-premise možnost'
-      ] : [
-        'Everything from Professional',
-        'White-label solution',
-        'Dedicated account manager',
-        'Unlimited users',
-        'SLA 99.9%',
-        'Custom integrations',
-        'On-premise option'
-      ],
-      cta: language === 'cs' ? 'Kontaktovat' : 'Contact Us',
-      highlighted: false
-    }
+      name: t("pricing.plan.enterprise"),
+      description:
+        language === "cs"
+          ? "Pro větší provozy a specifické integrace"
+          : "For larger operations and custom integrations",
+      price: null,
+      period: t("pricing.custom"),
+      features:
+        language === "cs"
+          ? [
+              "Vše z Professional",
+              "White‑label řešení (bez „Powered by“)",
+              "SLA a dedikovaná podpora",
+              "Neomezení uživatelé",
+              "Custom integrace (API / e‑shop)",
+              "Možnost on‑premise",
+            ]
+          : [
+              "Everything from Professional",
+              "White‑label (no “Powered by”)",
+              "SLA + dedicated support",
+              "Unlimited users",
+              "Custom integrations (API / e‑shop)",
+              "Optional on‑premise",
+            ],
+      ctaText: language === "cs" ? "Kontaktovat" : "Contact",
+      ctaTo: "/support",
+      highlighted: false,
+    },
   ];
 
-  const faqs = language === 'cs' ? [
-    {
-      q: 'Můžu změnit tarif kdykoliv?',
-      a: 'Ano, můžeš kdykoliv upgradovat nebo downgradovat svůj tarif.'
-    },
-    {
-      q: 'Platí se předem?',
-      a: 'Ano, platba probíhá vždy na začátku měsíce.'
-    },
-    {
-      q: 'Nabízíte roční slevu?',
-      a: 'Ano, při roční platbě získáš 20% slevu.'
-    },
-    {
-      q: 'Co když překročím limit kalkulací?',
-      a: 'Systém tě upozorní a můžeš upgradovat nebo dokoupit extra balíček.'
-    }
-  ] : [
-    {
-      q: 'Can I change my plan anytime?',
-      a: 'Yes, you can upgrade or downgrade your plan at any time.'
-    },
-    {
-      q: 'Do I pay in advance?',
-      a: 'Yes, payment is always made at the beginning of the month.'
-    },
-    {
-      q: 'Do you offer annual discounts?',
-      a: 'Yes, you get 20% off with annual payment.'
-    },
-    {
-      q: 'What if I exceed the calculation limit?',
-      a: 'The system will notify you and you can upgrade or purchase an extra package.'
-    }
-  ];
+  const kpis =
+    language === "cs"
+      ? [
+          {
+            value: 8,
+            suffix: "s",
+            title: "k ceně",
+            desc: "Průměrně během pár sekund po nahrání modelu.",
+          },
+          {
+            value: 60,
+            suffix: "%",
+            title: "méně ruční práce",
+            desc: "Zákazník vidí cenu hned – bez e‑mailů tam a zpět.",
+          },
+          {
+            value: 24,
+            suffix: "/7",
+            title: "automatizace",
+            desc: "Kalkulace běží nonstop, i když zrovna netiskneš.",
+          },
+        ]
+      : [
+          {
+            value: 8,
+            suffix: "s",
+            title: "to a quote",
+            desc: "Typically within seconds after upload.",
+          },
+          {
+            value: 60,
+            suffix: "%",
+            title: "less manual quoting",
+            desc: "Customers get a price instantly – no email ping‑pong.",
+          },
+          {
+            value: 24,
+            suffix: "/7",
+            title: "automation",
+            desc: "Quoting runs nonstop, even when you’re away.",
+          },
+        ];
+
+  const glossary = getGlossary(language);
+  const faqCategories = getFaqCategories(language);
+
+  const whatYouGetRows =
+    language === "cs"
+      ? [
+          <>
+            Přesné <GlossaryTerm termKey="slicing" glossary={glossary} /> přes
+            PrusaSlicer na serveru
+          </>,
+          <>Vlastní ceny materiálů, času a poplatků</>,
+          <>
+            <GlossaryTerm termKey="presets" glossary={glossary} /> kvality +
+            parametry (např. <GlossaryTerm termKey="infill" glossary={glossary} />)
+          </>,
+          <>Embed na web + whitelisting domén</>,
+        ]
+      : [
+          <>
+            Accurate <GlossaryTerm termKey="slicing" glossary={glossary} /> with
+            PrusaSlicer on our server
+          </>,
+          <>Custom material/time pricing + fees</>,
+          <>
+            <GlossaryTerm termKey="presets" glossary={glossary} /> + parameters
+            (e.g. <GlossaryTerm termKey="infill" glossary={glossary} />)
+          </>,
+          <>Website embed + domain allowlist</>,
+        ];
 
   return (
-    <div className="pricing-page">
-      <section className="pricing-hero">
-        <div className="container">
-          <h1>{t('pricing.hero.title')}</h1>
-          <p>{t('pricing.hero.subtitle')}</p>
+    <TooltipProvider delayDuration={200}>
+      <div className="min-h-screen">
+      {/* HERO */}
+      <section className="relative overflow-hidden border-b border-border">
+        <div className="absolute inset-0 -z-10">
+          <div className="absolute -top-32 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-primary/15 blur-3xl" />
+          <div className="absolute -bottom-40 right-[-120px] h-[520px] w-[520px] rounded-full bg-ring/15 blur-3xl" />
         </div>
-      </section>
 
-      <section className="pricing-plans">
-        <div className="container">
-          <div className="plans-grid">
-            {plans.map((plan, index) => (
-              <div key={index} className={`plan-card ${plan.highlighted ? 'highlighted' : ''}`}>
-                {plan.highlighted && <div className="popular-badge">{t('pricing.popular')}</div>}
-                <h3>{plan.name}</h3>
-                <div className="price">
-                  <span className="amount">{plan.price}</span>
-                  {plan.period && <span className="period"> {language === 'cs' ? 'Kč' : '$'}/{plan.period}</span>}
+        <Container className="py-14 sm:py-18">
+          <div className="grid gap-10 lg:grid-cols-2 lg:items-center">
+            <div>
+              <motion.h1
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35 }}
+                className="text-3xl sm:text-4xl font-semibold tracking-tight text-foreground"
+              >
+                {t("pricing.hero.title")}
+              </motion.h1>
+
+              <motion.p
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.06 }}
+                className="mt-3 text-base sm:text-lg text-muted-foreground"
+              >
+                {t("pricing.hero.subtitle")}
+              </motion.p>
+
+              <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                <Button asChild size="lg" variant="gradient">
+                  <Link to="/register">
+                    {language === "cs" ? "Začít zdarma" : "Start free"}
+                  </Link>
+                </Button>
+                <Button asChild size="lg" variant="outline">
+                  <a href="#faq">{language === "cs" ? "FAQ" : "FAQ"}</a>
+                </Button>
+              </div>
+
+              <div className="mt-10 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {kpis.map((k, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-2xl border border-border bg-card/60 backdrop-blur-sm p-4 shadow-sm"
+                  >
+                    <div className="text-2xl font-semibold text-foreground">
+                      <MotionNumber value={k.value} suffix={k.suffix} />
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-foreground">
+                      {k.title}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {k.desc}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="relative">
+              <div className="rounded-3xl border border-border bg-card/60 backdrop-blur-sm shadow-sm p-6 sm:p-8">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-foreground">
+                      {language === "cs" ? "Co získáš" : "What you get"}
+                    </div>
+                    <div className="mt-1 text-sm text-muted-foreground">
+                      {language === "cs"
+                        ? "Cenotvorbu + widget + admin panel."
+                        : "Pricing engine + widget + admin panel."}
+                    </div>
+                  </div>
+                  <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs text-muted-foreground">
+                    {language === "cs" ? "Bez závazků" : "No lock‑in"}
+                  </span>
                 </div>
-                <p className="description">{plan.description}</p>
-                <ul className="features">
-                  {plan.features.map((feature, i) => (
-                    <li key={i}>✓ {feature}</li>
+
+                <div className="mt-6 space-y-3 text-sm">
+                  {whatYouGetRows.map((row, idx) => (
+                    <div
+                      key={idx}
+                      className="flex items-start gap-2 rounded-2xl border border-border bg-background/60 px-4 py-3"
+                    >
+                      <span className="mt-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary">
+                        <span className="text-[12px]">✓</span>
+                      </span>
+                      <span className="text-muted-foreground">{row}</span>
+                    </div>
                   ))}
-                </ul>
-                <Link to="/register" className={`plan-cta ${plan.highlighted ? 'primary' : 'secondary'}`}>
-                  {plan.cta}
+                </div>
+
+                <div className="mt-6">
+                  <Button asChild variant="outline" fullWidth>
+                    <Link to="/model-upload">
+                      {language === "cs" ? "Otevřít demo kalkulačku" : "Open demo"}
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Container>
+      </section>
+
+      {/* PLANS */}
+      <section className="py-14 sm:py-18">
+        <Container>
+          <div className="flex flex-col items-start gap-2">
+            <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+              {language === "cs" ? "Plány pro každou tiskárnu" : "Plans for every shop"}
+            </h2>
+            <p className="text-muted-foreground">
+              {language === "cs"
+                ? "Začni zdarma a škáluj podle počtu kalkulací, brandingu a integrací."
+                : "Start free and scale by usage, branding, and integrations."}
+            </p>
+          </div>
+
+          <div className="mt-8 grid gap-6 lg:grid-cols-3 items-stretch">
+            {plans.map((p) => (
+              <PricingPlanCard
+                key={p.name}
+                name={p.name}
+                description={p.description}
+                price={p.price}
+                currency={currency}
+                period={p.period}
+                features={p.features}
+                highlighted={p.highlighted}
+                badgeText={t("pricing.popular")}
+                ctaText={p.ctaText}
+                ctaTo={p.ctaTo}
+              />
+            ))}
+          </div>
+
+          <div className="mt-8 rounded-3xl border border-border bg-muted/50 p-6 sm:p-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold text-foreground">
+                  {language === "cs"
+                    ? "Roční sleva + individuální pilot"
+                    : "Annual discount + pilot options"}
+                </div>
+                <div className="mt-1 text-sm text-muted-foreground">
+                  {language === "cs"
+                    ? "Chceš delší test nebo plán pro firmu? Napiš nám – domluvíme se."
+                    : "Need a longer test or a rollout plan? Contact us and we’ll tailor it."}
+                </div>
+              </div>
+
+              <Button asChild variant="outline">
+                <Link to="/support">
+                  {language === "cs" ? "Kontaktovat podporu" : "Contact support"}
                 </Link>
-              </div>
-            ))}
+              </Button>
+            </div>
           </div>
-        </div>
+        </Container>
       </section>
 
-      <section className="faq-section">
-        <div className="container">
-          <h2>{language === 'cs' ? 'Často kladené otázky' : 'Frequently Asked Questions'}</h2>
-          <div className="faq-grid">
-            {faqs.map((faq, index) => (
-              <div key={index} className="faq-item">
-                <h4>{faq.q}</h4>
-                <p>{faq.a}</p>
+      {/* FAQ */}
+      <section id="faq" className="py-14 sm:py-18 border-t border-border bg-background">
+        <Container>
+          <div className="grid gap-10 lg:grid-cols-12 lg:items-start">
+            <div className="lg:col-span-5">
+              <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+                {language === "cs" ? "FAQ" : "FAQ"}
+              </h2>
+              <p className="mt-2 text-muted-foreground">
+                {language === "cs"
+                  ? "Krátké odpovědi na nejčastější otázky před startem."
+                  : "Quick answers to the most common questions."}
+              </p>
+
+              <div className="mt-6 space-y-3">
+                <Button asChild variant="gradient" size="lg" fullWidth>
+                  <Link to="/register">
+                    {language === "cs" ? "Začít zdarma" : "Start free"}
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" size="lg" fullWidth>
+                  <Link to="/support">
+                    {language === "cs" ? "Napsat podporu" : "Contact support"}
+                  </Link>
+                </Button>
               </div>
-            ))}
+
+              <SupportHoverCards
+                language={language}
+                className="mt-6"
+              />
+            </div>
+
+            <div className="lg:col-span-7">
+              <FaqTabs categories={faqCategories} glossary={glossary} />
+            </div>
           </div>
-        </div>
+        </Container>
       </section>
 
-      <style>{`
-        .pricing-page {
-          width: 100%;
-        }
+      {/* FINAL CTA */}
+      <section className="py-14 sm:py-18">
+        <Container>
+          <div className="rounded-3xl border border-border bg-card/60 backdrop-blur-sm p-8 sm:p-10">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+              <div>
+                <h3 className="text-xl sm:text-2xl font-semibold text-foreground">
+                  {language === "cs"
+                    ? "Chceš plán na míru nebo integraci do e‑shopu?"
+                    : "Need a custom plan or e‑shop integration?"}
+                </h3>
+                <p className="mt-2 text-muted-foreground">
+                  {language === "cs"
+                    ? "Napiš nám, co potřebuješ – pošleme doporučení a další kroky."
+                    : "Tell us what you need and we’ll propose the best next steps."}
+                </p>
+              </div>
 
-        .container {
-          max-width: 1280px;
-          margin: 0 auto;
-          padding: 0 24px;
-        }
-
-        .pricing-hero {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          padding: 120px 0 80px 0;
-          text-align: center;
-        }
-
-        .pricing-hero h1 {
-          font-size: 48px;
-          font-weight: 700;
-          margin: 0 0 16px 0;
-        }
-
-        .pricing-hero p {
-          font-size: 20px;
-          opacity: 0.95;
-        }
-
-        .pricing-plans {
-          padding: 80px 0;
-        }
-
-        .plans-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 32px;
-        }
-
-        .plan-card {
-          background: white;
-          border: 2px solid #e5e7eb;
-          border-radius: 16px;
-          padding: 40px;
-          position: relative;
-          transition: all 0.3s;
-        }
-
-        .plan-card:hover {
-          transform: translateY(-4px);
-          box-shadow: 0 12px 24px rgba(0,0,0,0.1);
-        }
-
-        .plan-card.highlighted {
-          border-color: #667eea;
-          box-shadow: 0 8px 16px rgba(102, 126, 234, 0.2);
-        }
-
-        .popular-badge {
-          position: absolute;
-          top: -12px;
-          left: 50%;
-          transform: translateX(-50%);
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          padding: 6px 20px;
-          border-radius: 20px;
-          font-size: 12px;
-          font-weight: 600;
-        }
-
-        .plan-card h3 {
-          font-size: 24px;
-          font-weight: 700;
-          margin: 0 0 16px 0;
-          color: #111827;
-        }
-
-        .price {
-          margin-bottom: 16px;
-        }
-
-        .amount {
-          font-size: 48px;
-          font-weight: 700;
-          color: #667eea;
-        }
-
-        .period {
-          font-size: 16px;
-          color: #6B7280;
-        }
-
-        .description {
-          color: #6B7280;
-          margin-bottom: 24px;
-        }
-
-        .features {
-          list-style: none;
-          padding: 0;
-          margin: 0 0 32px 0;
-        }
-
-        .features li {
-          padding: 12px 0;
-          border-bottom: 1px solid #f0f0f0;
-          color: #374151;
-        }
-
-        .plan-cta {
-          display: block;
-          width: 100%;
-          padding: 14px;
-          text-align: center;
-          border-radius: 8px;
-          font-weight: 600;
-          text-decoration: none;
-          transition: all 0.2s;
-        }
-
-        .plan-cta.primary {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-        }
-
-        .plan-cta.secondary {
-          background: white;
-          color: #667eea;
-          border: 2px solid #667eea;
-        }
-
-        .plan-cta:hover {
-          transform: translateY(-2px);
-        }
-
-        .faq-section {
-          background: #f9fafb;
-          padding: 80px 0;
-        }
-
-        .faq-section h2 {
-          font-size: 36px;
-          font-weight: 700;
-          text-align: center;
-          margin: 0 0 60px 0;
-          color: #111827;
-        }
-
-        .faq-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 32px;
-          max-width: 900px;
-          margin: 0 auto;
-        }
-
-        .faq-item h4 {
-          font-size: 18px;
-          font-weight: 600;
-          margin: 0 0 8px 0;
-          color: #111827;
-        }
-
-        .faq-item p {
-          color: #6B7280;
-          margin: 0;
-          line-height: 1.6;
-        }
-
-        @media (max-width: 768px) {
-          .plans-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .faq-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
-    </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button asChild size="lg" variant="gradient">
+                  <Link to="/support">
+                    {language === "cs" ? "Kontaktovat" : "Contact"}
+                  </Link>
+                </Button>
+                <Button asChild size="lg" variant="outline">
+                  <Link to="/model-upload">
+                    {language === "cs" ? "Vyzkoušet demo" : "Try demo"}
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Container>
+      </section>
+      </div>
+    </TooltipProvider>
   );
 };
 

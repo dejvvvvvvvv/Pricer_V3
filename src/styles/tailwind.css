@@ -199,4 +199,36 @@
       transform: rotate(360deg);
     }
   }
+  /* Marketing micro-animations */
+  .mp-sparkle {
+    animation-name: mpSparkle;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    transform-origin: center;
+  }
+
+  @keyframes mpSparkle {
+    0%   { transform: scale(0.6); opacity: 0; }
+    35%  { opacity: 1; }
+    60%  { opacity: 1; }
+    100% { transform: scale(1.9); opacity: 0; }
+  }
+
+  .mp-marquee {
+    animation: mpMarquee 18s linear infinite;
+    will-change: transform;
+  }
+
+  @keyframes mpMarquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mp-sparkle { animation: none; }
+    .mp-marquee { animation: none; }
+  }
+
+
+
 }

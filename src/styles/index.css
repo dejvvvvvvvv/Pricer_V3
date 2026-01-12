@@ -10,3 +10,20 @@ body {
   font-family: inherit;
   margin: unset;
 }
+
+
+/* Smooth scrolling (fallback) */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Lenis recommended styles (non-breaking) */
+html.lenis {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}

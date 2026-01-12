@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes as RouterRoutes, Route } from 'react-router-dom';
 import Header from './components/ui/Header';
 import Footer from './components/ui/Footer';
+import SmoothScroll from './components/SmoothScroll';
+import ScrollToTop from './components/ScrollToTop';
 import Home from './pages/home';
 import ModelUpload from './pages/model-upload';
 import TestKalkulacka from './pages/test-kalkulacka';
@@ -28,6 +30,8 @@ import InviteAccept from './pages/InviteAccept';
 export default function Routes() {
   return (
     <BrowserRouter>
+      <SmoothScroll />
+      <ScrollToTop />
       <Header />
       <main>
         <RouterRoutes>
