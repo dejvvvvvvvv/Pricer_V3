@@ -4,7 +4,7 @@ import Icon from '../../components/AppIcon';
 import { useLanguage } from '../../contexts/LanguageContext';
 import Button from '../../components/ui/Button';
 
-import MeshGradient from '../../components/marketing/MeshGradient';
+import BackgroundPattern from '../../components/ui/BackgroundPattern';
 import Sparkles from '../../components/marketing/Sparkles';
 import MotionNumber from '../../components/marketing/MotionNumber';
 import LogoMarquee from '../../components/marketing/LogoMarquee';
@@ -69,10 +69,10 @@ const Home = () => {
   ];
 
   return (
-    <div className="bg-background text-foreground">
+    <div className="text-foreground relative">
+      <BackgroundPattern />
       {/* HERO */}
       <section className="relative overflow-hidden">
-        <MeshGradient />
 
         <div className="mx-auto max-w-6xl px-4 pb-8 pt-14 sm:pt-20">
           <div className="grid gap-10 lg:grid-cols-12 lg:items-center">
