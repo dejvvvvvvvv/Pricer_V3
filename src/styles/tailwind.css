@@ -27,6 +27,7 @@
     
     /* Primary Colors */
     --color-primary: #2563EB; /* blue-600 */
+    --color-primary-hover: #1D4ED8; /* blue-700 */
     --color-primary-foreground: #FFFFFF; /* white */
     
     /* Secondary Colors */

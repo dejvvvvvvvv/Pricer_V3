@@ -10,7 +10,8 @@ import MotionNumber from '../../components/marketing/MotionNumber';
 import LogoMarquee from '../../components/marketing/LogoMarquee';
 import SpotlightCard from '../../components/marketing/SpotlightCard';
 import ImageRipple from '../../components/marketing/ImageRipple';
-import ImageReveal from '../../components/marketing/ImageReveal';
+import GlobalMap from '../../components/marketing/GlobalMap';
+
 import Accordion from '../../components/marketing/Accordion';
 import Reveal from '../../components/marketing/Reveal';
 
@@ -95,13 +96,13 @@ const Home = () => {
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <Button asChild size="lg">
-                  <Link to="/model-upload">
+                  <Link to="/pricing">
                     {t('home.hero.cta.primary')}
                   </Link>
                 </Button>
 
                 <Button asChild variant="outline" size="lg">
-                  <Link to="/pricing">
+                  <Link to="/model-upload">
                     {t('home.hero.cta.secondary')}
                   </Link>
                 </Button>
@@ -260,6 +261,171 @@ const Home = () => {
         </div>
       </section>
 
+
+
+      {/* DEMO PREVIEW */}
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+        <Reveal>
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="max-w-2xl">
+              <h2 className="text-3xl font-bold tracking-tight">{t('home.demo.title')}</h2>
+              <p className="mt-3 text-muted-foreground leading-relaxed">{t('home.demo.subtitle')}</p>
+            </div>
+            <Button asChild variant="outline">
+              <Link to="/model-upload">
+                <Icon name="Play" size={16} className="mr-2" />
+                {t('home.demo.cta')}
+              </Link>
+            </Button>
+          </div>
+        </Reveal>
+
+        <div className="mt-8 grid gap-6 md:grid-cols-2">
+          {/* LEFT: OLD WAY - Email (muted, boring, grayscale feel) */}
+          <Reveal delay={0.08} className="md:order-2">
+            <div className="relative h-full overflow-hidden rounded-3xl border border-gray-300/50 bg-gradient-to-br from-gray-100 to-gray-50 p-6 sm:p-8">
+              <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,rgba(0,0,0,0.01)_10px,rgba(0,0,0,0.01)_20px)]" />
+              
+              <div className="relative">
+                <div className="inline-flex items-center gap-2 rounded-full bg-gray-200/80 px-3 py-1 text-xs font-medium text-gray-500">
+                  <Icon name="Clock" size={12} />
+                  Starý způsob
+                </div>
+                
+                <div className="mt-4 flex items-center gap-3">
+                  <div className="grid h-11 w-11 place-items-center rounded-xl bg-orange-100/80">
+                    <Icon name="Mail" size={22} className="text-orange-400" />
+                  </div>
+                  <div>
+                    <div className="text-base font-semibold text-gray-600">E-maily a ruční nabídky</div>
+                    <div className="text-sm text-gray-400">Pomalý a náročný proces</div>
+                  </div>
+                </div>
+
+                {/* Email thread mockup */}
+                <div className="mt-5 space-y-3">
+                  <div className="rounded-lg bg-white/60 p-3 shadow-sm border border-gray-200/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-6 w-6 rounded-full bg-gray-300" />
+                      <div className="text-xs text-gray-400">zákazník@email.cz</div>
+                      <div className="ml-auto text-xs text-gray-300">před 2 dny</div>
+                    </div>
+                    <div className="text-xs text-gray-500 italic">„Dobrý den, mohl bych dostat cenovou nabídku na tyto 3 modely?"</div>
+                  </div>
+                  <div className="rounded-lg bg-white/60 p-3 shadow-sm border border-gray-200/50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-6 w-6 rounded-full bg-blue-200" />
+                      <div className="text-xs text-gray-400">vy@firma.cz</div>
+                      <div className="ml-auto text-xs text-gray-300">před 1 dnem</div>
+                    </div>
+                    <div className="text-xs text-gray-500 italic">„Dobrý den, potřebuji znát rozměry a materiál..."</div>
+                  </div>
+                  <div className="rounded-lg bg-white/40 p-3 border border-dashed border-gray-200">
+                    <div className="text-xs text-gray-400 text-center">⏳ Čekání na odpověď...</div>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-2">
+                  <div className="flex items-center gap-3 rounded-lg bg-red-50 px-3 py-2 border border-red-200/50">
+                    <Icon name="X" size={18} className="text-red-500 flex-shrink-0" />
+                    <span className="text-sm font-semibold text-red-700">Hodiny až dny čekání</span>
+                  </div>
+                  <div className="flex items-center gap-3 rounded-lg bg-red-50 px-3 py-2 border border-red-200/50">
+                    <Icon name="X" size={18} className="text-red-500 flex-shrink-0" />
+                    <span className="text-sm font-semibold text-red-700">Ztracené objednávky</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Reveal>
+
+          {/* RIGHT: NEW WAY - Calculator (vibrant, colorful, happy!) */}
+          <Reveal delay={0.02} className="md:order-1">
+            <div className="relative h-full overflow-hidden rounded-3xl p-6 sm:p-8"
+              style={{
+                background: 'linear-gradient(135deg, rgba(89, 39, 226, 0.15) 0%, rgba(139, 92, 246, 0.25) 50%, rgba(168, 85, 247, 0.2) 100%)',
+              }}
+            >
+              {/* Glow effects */}
+              <div className="absolute -top-20 -right-20 h-40 w-40 rounded-full bg-purple-400/30 blur-3xl" />
+              <div className="absolute -bottom-10 -left-10 h-32 w-32 rounded-full bg-blue-400/20 blur-2xl" />
+              
+              {/* Border glow */}
+              <div className="absolute inset-0 rounded-3xl border-2 border-purple-400/40 shadow-[0_0_30px_rgba(139,92,246,0.3)]" />
+              
+              <div className="relative">
+                <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-600 to-violet-500 px-4 py-1.5 text-xs font-bold text-white shadow-lg shadow-purple-500/30">
+                  <Icon name="Sparkles" size={14} />
+                  Nový způsob
+                </div>
+                
+                <div className="mt-4 flex items-center gap-3">
+                  <div className="grid h-12 w-12 place-items-center rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 shadow-lg shadow-purple-500/40">
+                    <Icon name="Zap" size={24} className="text-white" />
+                  </div>
+                  <div>
+                    <div className="text-lg font-bold text-gray-900">Automatická kalkulačka</div>
+                    <div className="text-sm text-purple-700 font-medium">Okamžitá cena, bez čekání</div>
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-2">
+                  <div className="flex items-center gap-3 rounded-lg bg-white/70 px-3 py-2 backdrop-blur-sm">
+                    <div className="grid h-6 w-6 place-items-center rounded-full bg-green-500 shadow">
+                      <Icon name="Check" size={14} className="text-white" />
+                    </div>
+                    <span className="text-sm font-medium">Cena do <strong className="text-purple-700">3 sekund</strong></span>
+                  </div>
+                  <div className="flex items-center gap-3 rounded-lg bg-white/70 px-3 py-2 backdrop-blur-sm">
+                    <div className="grid h-6 w-6 place-items-center rounded-full bg-green-500 shadow">
+                      <Icon name="Check" size={14} className="text-white" />
+                    </div>
+                    <span className="text-sm font-medium">Přesný výpočet z <strong className="text-purple-700">PrusaSliceru</strong></span>
+                  </div>
+                  <div className="flex items-center gap-3 rounded-lg bg-white/70 px-3 py-2 backdrop-blur-sm">
+                    <div className="grid h-6 w-6 place-items-center rounded-full bg-green-500 shadow">
+                      <Icon name="Check" size={14} className="text-white" />
+                    </div>
+                    <span className="text-sm font-medium">Zákazník objedná sám <strong className="text-purple-700">24/7</strong></span>
+                  </div>
+                  <div className="flex items-center gap-3 rounded-lg bg-white/70 px-3 py-2 backdrop-blur-sm">
+                    <div className="grid h-6 w-6 place-items-center rounded-full bg-green-500 shadow">
+                      <Icon name="Check" size={14} className="text-white" />
+                    </div>
+                    <span className="text-sm font-medium">Výrazně <strong className="text-purple-700">vyšší konverze</strong> prodeje</span>
+                  </div>
+                </div>
+
+                {/* Mini widget preview */}
+                <div className="mt-5 rounded-2xl bg-white/90 p-4 shadow-xl shadow-purple-500/10 backdrop-blur border border-purple-200/50">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                      <span className="text-xs font-semibold text-gray-600">Live kalkulace</span>
+                    </div>
+                    <Icon name="Sparkles" size={14} className="text-purple-500" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg bg-gray-50 p-2 text-center">
+                      <div className="text-xs text-gray-400">Čas</div>
+                      <div className="text-sm font-bold text-gray-800">2h 14m</div>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 p-2 text-center">
+                      <div className="text-xs text-gray-400">Hmotnost</div>
+                      <div className="text-sm font-bold text-gray-800">46g</div>
+                    </div>
+                    <div className="rounded-lg bg-gradient-to-br from-purple-500 to-violet-600 p-2 text-center shadow-lg">
+                      <div className="text-xs text-purple-200">Cena</div>
+                      <div className="text-sm font-bold text-white">299 Kč</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
       {/* FEATURES */}
       <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
         <div>
@@ -284,87 +450,6 @@ const Home = () => {
               </Reveal>
             ))}
           </div>
-        </div>
-      </section>
-
-      {/* DEMO PREVIEW */}
-      <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
-        <Reveal>
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="max-w-2xl">
-              <h2 className="text-3xl font-bold tracking-tight">{t('home.demo.title')}</h2>
-              <p className="mt-3 text-muted-foreground leading-relaxed">{t('home.demo.subtitle')}</p>
-            </div>
-            <Button asChild variant="outline">
-              <Link to="/model-upload">
-                <Icon name="Play" size={16} className="mr-2" />
-                {t('home.demo.cta')}
-              </Link>
-            </Button>
-          </div>
-        </Reveal>
-
-        <div className="mt-10">
-          <ImageReveal
-            className="shadow-lg"
-            before={
-              <div className="h-full w-full p-6 sm:p-8">
-                <div className="flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-destructive/10">
-                    <Icon name="Mail" size={18} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold">E‑mail poptávky</div>
-                    <div className="text-xs text-muted-foreground">ruční nacenění, čekání, ztracené leady</div>
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-3">
-                  <div className="h-10 rounded-xl bg-muted" />
-                  <div className="h-10 rounded-xl bg-muted/70" />
-                  <div className="h-10 rounded-xl bg-muted/50" />
-                </div>
-
-                <div className="mt-6 rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground">
-                  „Můžete mi prosím poslat cenu za 2 kusy?“
-                </div>
-              </div>
-            }
-            after={
-              <div className="h-full w-full p-6 sm:p-8">
-                <div className="flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10">
-                    <Icon name="Sparkles" size={18} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-semibold">Okamžitá cena ve widgetu</div>
-                    <div className="text-xs text-muted-foreground">přesné slicování + pravidla cen</div>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-border bg-card p-4">
-                    <div className="text-xs text-muted-foreground">Čas tisku</div>
-                    <div className="mt-1 text-lg font-semibold">2h 14m</div>
-                  </div>
-                  <div className="rounded-2xl border border-border bg-card p-4">
-                    <div className="text-xs text-muted-foreground">Hmotnost</div>
-                    <div className="mt-1 text-lg font-semibold">46 g</div>
-                  </div>
-                  <div className="sm:col-span-2 rounded-2xl border border-border bg-card p-4 flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-muted-foreground">Cena</div>
-                      <div className="mt-1 text-2xl font-bold">299 Kč</div>
-                    </div>
-                    <Button size="sm">
-                      <Icon name="ShoppingCart" size={16} className="mr-2" />
-                      Add to cart
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            }
-          />
         </div>
       </section>
 
@@ -436,6 +521,42 @@ const Home = () => {
             </SpotlightCard>
           </Reveal>
         </div>
+      </section>
+
+      {/* GLOBAL USAGE MAP */}
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+        <Reveal>
+          <div className="grid gap-8 lg:grid-cols-2 lg:items-center">
+            <div className="order-2 lg:order-1">
+              <h2 className="text-3xl font-bold tracking-tight">Používáno tiskárnami po celém světě</h2>
+              <p className="mt-4 text-lg text-muted-foreground leading-relaxed">
+                Připojte se k rostoucí komunitě profesionálů v 3D tisku. Naše řešení pomáhá firmám od lokálních studií až po velké výrobní provozy automatizovat jejich procesy a získávat více zakázek.
+              </p>
+              
+              <div className="mt-8 flex items-center gap-4">
+                <div className="flex -space-x-3">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className={`h-10 w-10 rounded-full border-2 border-background bg-gray-${i * 100 + 200}`} 
+                         style={{ backgroundImage: `url(https://i.pravatar.cc/100?img=${i + 10})`, backgroundSize: 'cover' }} />
+                  ))}
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-background bg-muted text-xs font-semibold">
+                    +500
+                  </div>
+                </div>
+                <div className="text-sm font-medium">
+                  <span className="text-foreground">Spokojených klientů</span>
+                  <div className="flex text-yellow-500">
+                    {'★★★★★'.split('').map((s, i) => <span key={i}>{s}</span>)}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="order-1 flex justify-center lg:order-2 lg:justify-end">
+              <GlobalMap />
+            </div>
+          </div>
+        </Reveal>
       </section>
 
       {/* FAQ */}
