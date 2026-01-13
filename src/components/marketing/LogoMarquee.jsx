@@ -7,15 +7,18 @@ export default function LogoMarquee({ items, className }) {
   const loopItems = [...safeItems, ...safeItems];
 
   return (
-    <div className={cn('relative overflow-hidden', className)}>
-      <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-background to-transparent" />
-      <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-background to-transparent" />
-
+    <div 
+      className={cn('relative overflow-hidden', className)}
+      style={{
+        maskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+        WebkitMaskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+      }}
+    >
       <div className="mp-marquee flex w-max items-center gap-4">
         {loopItems.map((label, idx) => (
           <div
             key={`${label}-${idx}`}
-            className="select-none whitespace-nowrap rounded-full border border-border bg-card/60 px-4 py-2 text-xs font-semibold tracking-wide text-muted-foreground"
+            className="select-none whitespace-nowrap rounded-full border border-border bg-card/60 px-4 py-2 text-xs font-semibold tracking-wide text-muted-foreground backdrop-blur-sm"
           >
             {label}
           </div>

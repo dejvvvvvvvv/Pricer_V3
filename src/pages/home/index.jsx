@@ -233,7 +233,7 @@ const Home = () => {
       </section>
 
       {/* HOW IT WORKS */}
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
         <Reveal>
           <div className="max-w-2xl">
             <h2 className="text-3xl font-bold tracking-tight">{t('home.how.title')}</h2>
@@ -261,8 +261,8 @@ const Home = () => {
       </section>
 
       {/* FEATURES */}
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
-        <div className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+        <div>
           <Reveal>
             <h2 className="text-3xl font-bold tracking-tight">{t('home.features.title')}</h2>
           </Reveal>
@@ -288,7 +288,7 @@ const Home = () => {
       </section>
 
       {/* DEMO PREVIEW */}
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
         <Reveal>
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div className="max-w-2xl">
@@ -369,26 +369,28 @@ const Home = () => {
       </section>
 
       {/* PRICING TEASER */}
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
-        <div className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
-          <div className="grid gap-8 lg:grid-cols-12 lg:items-center">
-            <Reveal className="lg:col-span-7">
-              <h2 className="text-3xl font-bold tracking-tight">{t('home.pricing.title')}</h2>
-              <p className="mt-3 text-muted-foreground leading-relaxed">{t('home.pricing.subtitle')}</p>
-            </Reveal>
-            <Reveal className="lg:col-span-5 lg:justify-self-end" delay={0.08}>
-              <Button asChild size="lg">
-                <Link to="/pricing">
-                  {t('home.pricing.cta')}
-                </Link>
-              </Button>
-            </Reveal>
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+        <div>
+          <div className="rounded-3xl border border-border bg-card/50 p-8 shadow-lg backdrop-blur">
+            <div className="grid gap-8 lg:grid-cols-12 lg:items-center">
+              <Reveal className="lg:col-span-7">
+                <h2 className="text-3xl font-bold tracking-tight">{t('home.pricing.title')}</h2>
+                <p className="mt-3 text-muted-foreground leading-relaxed">{t('home.pricing.subtitle')}</p>
+              </Reveal>
+              <Reveal className="lg:col-span-5 lg:justify-self-end" delay={0.08}>
+                <Button asChild size="lg">
+                  <Link to="/pricing">
+                    {t('home.pricing.cta')}
+                  </Link>
+                </Button>
+              </Reveal>
+            </div>
           </div>
         </div>
       </section>
 
       {/* FOR WHOM */}
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
         <Reveal>
           <h2 className="text-3xl font-bold tracking-tight">{t('home.audience.title')}</h2>
         </Reveal>
@@ -437,8 +439,8 @@ const Home = () => {
       </section>
 
       {/* FAQ */}
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
-        <div className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+        <div>
           <Reveal>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div className="max-w-2xl">
