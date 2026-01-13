@@ -214,8 +214,7 @@ const Home = () => {
         </div>
 
         {/* TRUST STRIP */}
-        <div className="border-t border-border bg-background/60">
-          <div className="mx-auto max-w-6xl px-4 py-6">
+        <div className="mx-auto max-w-6xl px-4 py-6">
             <Reveal>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm font-semibold">
@@ -230,7 +229,6 @@ const Home = () => {
                 <LogoMarquee items={trustItems} />
               </div>
             </Reveal>
-          </div>
         </div>
       </section>
 
@@ -263,7 +261,7 @@ const Home = () => {
       </section>
 
       {/* FEATURES */}
-      <section className="border-t border-border bg-background/40">
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
           <Reveal>
             <h2 className="text-3xl font-bold tracking-tight">{t('home.features.title')}</h2>
@@ -371,7 +369,7 @@ const Home = () => {
       </section>
 
       {/* PRICING TEASER */}
-      <section className="border-t border-border bg-background/40">
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
           <div className="grid gap-8 lg:grid-cols-12 lg:items-center">
             <Reveal className="lg:col-span-7">
@@ -439,7 +437,7 @@ const Home = () => {
       </section>
 
       {/* FAQ */}
-      <section className="border-t border-border bg-background/40">
+      <section className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
         <div className="mx-auto max-w-6xl px-4 py-16 sm:py-20">
           <Reveal>
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
