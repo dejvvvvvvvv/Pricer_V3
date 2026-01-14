@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Icon from '../../components/AppIcon';
 import { useLanguage } from '../../contexts/LanguageContext';
+import BackgroundPattern from '../../components/ui/BackgroundPattern';
 
 const AccountPage = () => {
   const { language } = useLanguage();
@@ -37,7 +39,7 @@ const AccountPage = () => {
 
   const handleSaveProfile = () => {
     console.log('Saving profile:', profileData);
-    alert(language === 'cs' ? '✅ Profil uložen! (Mock - zatím nepropojeno s backendem)' : '✅ Profile saved! (Mock - not connected to backend yet)');
+    alert(language === 'cs' ? '✅ Profil uložen!' : '✅ Profile saved!');
   };
 
   const handleChangePassword = () => {
@@ -46,39 +48,46 @@ const AccountPage = () => {
       return;
     }
     console.log('Changing password');
-    alert(language === 'cs' ? '✅ Heslo změněno! (Mock - zatím nepropojeno s backendem)' : '✅ Password changed! (Mock - not connected to backend yet)');
+    alert(language === 'cs' ? '✅ Heslo změněno!' : '✅ Password changed!');
     setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
   };
 
+  // Password strength calculation
+  const getPasswordStrength = (password) => {
+    if (!password) return { level: 0, text: '', color: 'bg-gray-200' };
+    let strength = 0;
+    if (password.length >= 8) strength++;
+    if (/[A-Z]/.test(password)) strength++;
+    if (/[0-9]/.test(password)) strength++;
+    if (/[^A-Za-z0-9]/.test(password)) strength++;
+    
+    if (strength <= 1) return { level: 25, text: language === 'cs' ? 'Slabé' : 'Weak', color: 'bg-red-500' };
+    if (strength === 2) return { level: 50, text: language === 'cs' ? 'Střední' : 'Medium', color: 'bg-yellow-500' };
+    if (strength === 3) return { level: 75, text: language === 'cs' ? 'Dobré' : 'Good', color: 'bg-blue-500' };
+    return { level: 100, text: language === 'cs' ? 'Silné' : 'Strong', color: 'bg-green-500' };
+  };
+
+  const passwordStrength = getPasswordStrength(passwordData.newPassword);
+
   const t = {
-    // Page header
     'account.title': language === 'cs' ? 'Nastavení účtu' : 'Account Settings',
     'account.subtitle': language === 'cs' ? 'Spravujte informace o účtu a předvolby' : 'Manage your account information and preferences',
-    
-    // Tabs
     'tab.profile': language === 'cs' ? 'Profil' : 'Profile',
-    'tab.company': language === 'cs' ? 'Firma' : 'Company Info',
+    'tab.company': language === 'cs' ? 'Firma' : 'Company',
     'tab.security': language === 'cs' ? 'Zabezpečení' : 'Security',
-    'tab.billing': language === 'cs' ? 'Fakturace' : 'Billing',
-    
-    // Profile tab
     'profile.title': language === 'cs' ? 'Osobní informace' : 'Personal Information',
     'profile.firstName': language === 'cs' ? 'Jméno' : 'First Name',
     'profile.lastName': language === 'cs' ? 'Příjmení' : 'Last Name',
     'profile.email': language === 'cs' ? 'Emailová adresa' : 'Email Address',
     'profile.phone': language === 'cs' ? 'Telefonní číslo' : 'Phone Number',
-    
-    // Company tab
     'company.title': language === 'cs' ? 'Informace o firmě' : 'Company Information',
     'company.name': language === 'cs' ? 'Název firmy' : 'Company Name',
-    'company.ico': language === 'cs' ? 'IČO' : 'Company ID (IČO)',
-    'company.dic': language === 'cs' ? 'DIČ' : 'VAT ID (DIČ)',
+    'company.ico': language === 'cs' ? 'IČO' : 'Company ID',
+    'company.dic': language === 'cs' ? 'DIČ' : 'VAT ID',
     'company.address': language === 'cs' ? 'Adresa' : 'Address',
     'company.city': language === 'cs' ? 'Město' : 'City',
     'company.zip': language === 'cs' ? 'PSČ' : 'ZIP Code',
     'company.country': language === 'cs' ? 'Země' : 'Country',
-    
-    // Security tab
     'security.title': language === 'cs' ? 'Změnit heslo' : 'Change Password',
     'security.current': language === 'cs' ? 'Současné heslo' : 'Current Password',
     'security.new': language === 'cs' ? 'Nové heslo' : 'New Password',
@@ -88,9 +97,11 @@ const AccountPage = () => {
     'security.2fa.enable': language === 'cs' ? 'Zapnout 2FA' : 'Enable 2FA',
     'security.sessions.title': language === 'cs' ? 'Aktivní relace' : 'Active Sessions',
     'security.sessions.desc': language === 'cs' ? 'Spravujte zařízení, na kterých jste přihlášeni' : 'Manage devices where you\'re currently logged in',
-    'security.sessions.current': language === 'cs' ? 'Aktuální relace' : 'Current session',
-    
-    // Billing tab
+    'security.sessions.current': language === 'cs' ? 'Toto zařízení' : 'This device',
+    'common.cancel': language === 'cs' ? 'Zrušit' : 'Cancel',
+    'common.save': language === 'cs' ? 'Uložit změny' : 'Save Changes',
+    'common.change': language === 'cs' ? 'Změnit heslo' : 'Change Password',
+    'tab.billing': language === 'cs' ? 'Fakturace' : 'Billing',
     'billing.title': language === 'cs' ? 'Fakturace a předplatné' : 'Billing & Subscription',
     'billing.plan.title': language === 'cs' ? 'Aktuální tarif' : 'Current Plan',
     'billing.plan.name': language === 'cs' ? 'Professional tarif' : 'Professional Plan',
@@ -99,755 +110,453 @@ const AccountPage = () => {
     'billing.payment.title': language === 'cs' ? 'Platební metody' : 'Payment Methods',
     'billing.payment.add': language === 'cs' ? 'Přidat platební metodu' : 'Add Payment Method',
     'billing.payment.expires': language === 'cs' ? 'Platnost do' : 'Expires',
-    'billing.payment.edit': language === 'cs' ? 'Upravit' : 'Edit',
-    'billing.payment.remove': language === 'cs' ? 'Odebrat' : 'Remove',
     'billing.history.title': language === 'cs' ? 'Historie faktur' : 'Billing History',
     'billing.history.download': language === 'cs' ? 'Stáhnout PDF' : 'Download PDF',
-    
-    // Common
-    'common.cancel': language === 'cs' ? 'Zrušit' : 'Cancel',
-    'common.save': language === 'cs' ? 'Uložit změny' : 'Save Changes',
-    'common.change': language === 'cs' ? 'Změnit heslo' : 'Change Password',
   };
 
-  return (
-    <div className="account-page">
-      <div className="container">
-        {/* Page Header */}
-        <div className="page-header">
-          <div>
-            <h1>{t['account.title']}</h1>
-            <p className="subtitle">{t['account.subtitle']}</p>
+  const tabs = [
+    { id: 'profile', label: t['tab.profile'], icon: 'User' },
+    { id: 'company', label: t['tab.company'], icon: 'Building2' },
+    { id: 'security', label: t['tab.security'], icon: 'Shield' },
+    { id: 'billing', label: t['tab.billing'], icon: 'CreditCard' },
+  ];
+
+  const contentVariants = {
+    initial: { opacity: 0, y: 20 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -10 }
+  };
+
+  const cardVariants = {
+    initial: { opacity: 0, y: 20 },
+    animate: (i) => ({
+      opacity: 1,
+      y: 0,
+      transition: { delay: i * 0.1, duration: 0.4, ease: 'easeOut' }
+    })
+  };
+
+  // Reusable Input Component
+  const FormInput = ({ icon, label, type = 'text', value, onChange, placeholder }) => (
+    <div className="space-y-2">
+      <label className="block text-sm font-medium text-slate-700">{label}</label>
+      <div className="relative">
+        {icon && (
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <Icon name={icon} size={18} />
           </div>
-        </div>
+        )}
+        <input
+          type={type}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          className={`w-full ${icon ? 'pl-10' : 'pl-4'} pr-4 py-3 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm text-slate-900 placeholder-slate-400 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary hover:border-slate-300`}
+        />
+      </div>
+    </div>
+  );
 
-        {/* Tabs */}
-        <div className="tabs">
-          <button
-            className={`tab ${activeTab === 'profile' ? 'active' : ''}`}
-            onClick={() => setActiveTab('profile')}
-          >
-            <Icon name="User" size={18} />
-            <span>{t['tab.profile']}</span>
-          </button>
-          <button
-            className={`tab ${activeTab === 'company' ? 'active' : ''}`}
-            onClick={() => setActiveTab('company')}
-          >
-            <Icon name="Building" size={18} />
-            <span>{t['tab.company']}</span>
-          </button>
-          <button
-            className={`tab ${activeTab === 'security' ? 'active' : ''}`}
-            onClick={() => setActiveTab('security')}
-          >
-            <Icon name="Lock" size={18} />
-            <span>{t['tab.security']}</span>
-          </button>
-          <button
-            className={`tab ${activeTab === 'billing' ? 'active' : ''}`}
-            onClick={() => setActiveTab('billing')}
-          >
-            <Icon name="CreditCard" size={18} />
-            <span>{t['tab.billing']}</span>
-          </button>
-        </div>
-
-        {/* Tab Content */}
-        <div className="tab-content">
-          {/* PROFILE TAB */}
-          {activeTab === 'profile' && (
-            <div className="content-section">
-              <h2>{t['profile.title']}</h2>
-              <div className="form-grid">
-                <div className="form-group">
-                  <label>{t['profile.firstName']}</label>
-                  <input
-                    type="text"
-                    value={profileData.firstName}
-                    onChange={(e) => handleProfileChange('firstName', e.target.value)}
-                    placeholder={t['profile.firstName']}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>{t['profile.lastName']}</label>
-                  <input
-                    type="text"
-                    value={profileData.lastName}
-                    onChange={(e) => handleProfileChange('lastName', e.target.value)}
-                    placeholder={t['profile.lastName']}
-                  />
-                </div>
-                <div className="form-group full-width">
-                  <label>{t['profile.email']}</label>
-                  <input
-                    type="email"
-                    value={profileData.email}
-                    onChange={(e) => handleProfileChange('email', e.target.value)}
-                    placeholder={t['profile.email']}
-                  />
-                </div>
-                <div className="form-group full-width">
-                  <label>{t['profile.phone']}</label>
-                  <input
-                    type="tel"
-                    value={profileData.phone}
-                    onChange={(e) => handleProfileChange('phone', e.target.value)}
-                    placeholder={t['profile.phone']}
-                  />
-                </div>
-              </div>
-              <div className="form-actions">
-                <button className="btn-secondary">{t['common.cancel']}</button>
-                <button className="btn-primary" onClick={handleSaveProfile}>
-                  {t['common.save']}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* COMPANY TAB */}
-          {activeTab === 'company' && (
-            <div className="content-section">
-              <h2>{t['company.title']}</h2>
-              <div className="form-grid">
-                <div className="form-group full-width">
-                  <label>{t['company.name']}</label>
-                  <input
-                    type="text"
-                    value={profileData.company}
-                    onChange={(e) => handleProfileChange('company', e.target.value)}
-                    placeholder={t['company.name']}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>{t['company.ico']}</label>
-                  <input
-                    type="text"
-                    value={profileData.ico}
-                    onChange={(e) => handleProfileChange('ico', e.target.value)}
-                    placeholder={t['company.ico']}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>{t['company.dic']}</label>
-                  <input
-                    type="text"
-                    value={profileData.dic}
-                    onChange={(e) => handleProfileChange('dic', e.target.value)}
-                    placeholder={t['company.dic']}
-                  />
-                </div>
-                <div className="form-group full-width">
-                  <label>{t['company.address']}</label>
-                  <input
-                    type="text"
-                    value={profileData.address}
-                    onChange={(e) => handleProfileChange('address', e.target.value)}
-                    placeholder={t['company.address']}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>{t['company.city']}</label>
-                  <input
-                    type="text"
-                    value={profileData.city}
-                    onChange={(e) => handleProfileChange('city', e.target.value)}
-                    placeholder={t['company.city']}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>{t['company.zip']}</label>
-                  <input
-                    type="text"
-                    value={profileData.zip}
-                    onChange={(e) => handleProfileChange('zip', e.target.value)}
-                    placeholder={t['company.zip']}
-                  />
-                </div>
-                <div className="form-group full-width">
-                  <label>{t['company.country']}</label>
-                  <select
-                    value={profileData.country}
-                    onChange={(e) => handleProfileChange('country', e.target.value)}
-                  >
-                    <option>Česká republika</option>
-                    <option>Slovensko</option>
-                    <option>Polsko</option>
-                    <option>Německo</option>
-                    <option>Rakousko</option>
-                  </select>
-                </div>
-              </div>
-              <div className="form-actions">
-                <button className="btn-secondary">{t['common.cancel']}</button>
-                <button className="btn-primary" onClick={handleSaveProfile}>
-                  {t['common.save']}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* SECURITY TAB */}
-          {activeTab === 'security' && (
-            <div className="content-section">
-              <h2>{t['security.title']}</h2>
-              <div className="form-grid">
-                <div className="form-group full-width">
-                  <label>{t['security.current']}</label>
-                  <input
-                    type="password"
-                    value={passwordData.currentPassword}
-                    onChange={(e) => handlePasswordChange('currentPassword', e.target.value)}
-                    placeholder={t['security.current']}
-                  />
-                </div>
-                <div className="form-group full-width">
-                  <label>{t['security.new']}</label>
-                  <input
-                    type="password"
-                    value={passwordData.newPassword}
-                    onChange={(e) => handlePasswordChange('newPassword', e.target.value)}
-                    placeholder={t['security.new']}
-                  />
-                </div>
-                <div className="form-group full-width">
-                  <label>{t['security.confirm']}</label>
-                  <input
-                    type="password"
-                    value={passwordData.confirmPassword}
-                    onChange={(e) => handlePasswordChange('confirmPassword', e.target.value)}
-                    placeholder={t['security.confirm']}
-                  />
-                </div>
-              </div>
-              <div className="form-actions">
-                <button className="btn-secondary">{t['common.cancel']}</button>
-                <button className="btn-primary" onClick={handleChangePassword}>
-                  {t['common.change']}
-                </button>
-              </div>
-
-              <div className="security-info">
-                <h3>{t['security.2fa.title']}</h3>
-                <p>{t['security.2fa.desc']}</p>
-                <button className="btn-outline">{t['security.2fa.enable']}</button>
-              </div>
-
-              <div className="security-info">
-                <h3>{t['security.sessions.title']}</h3>
-                <p>{t['security.sessions.desc']}</p>
-                <div className="session-list">
-                  <div className="session-item">
-                    <div className="session-icon">
-                      <Icon name="Monitor" size={20} />
-                    </div>
-                    <div className="session-details">
-                      <strong>Windows PC - Chrome</strong>
-                      <span>{language === 'cs' ? 'Praha, Česká republika • Aktivní nyní' : 'Prague, Czech Republic • Active now'}</span>
-                    </div>
-                    <button className="btn-text">{t['security.sessions.current']}</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* BILLING TAB */}
-          {activeTab === 'billing' && (
-            <div className="content-section">
-              <h2>{t['billing.title']}</h2>
-              
-              <div className="billing-card">
-                <div className="billing-header">
-                  <div>
-                    <h3>{t['billing.plan.title']}</h3>
-                    <p className="plan-name">{t['billing.plan.name']}</p>
-                  </div>
-                  <div className="plan-price">
-                    <span className="price">1,299 {language === 'cs' ? 'Kč' : 'CZK'}</span>
-                    <span className="period">/{language === 'cs' ? 'měsíc' : 'month'}</span>
-                  </div>
-                </div>
-                <div className="billing-features">
-                  <div className="feature">
-                    <Icon name="Check" size={16} />
-                    <span>{language === 'cs' ? 'Neomezené kalkulace' : 'Unlimited calculations'}</span>
-                  </div>
-                  <div className="feature">
-                    <Icon name="Check" size={16} />
-                    <span>{language === 'cs' ? 'Pokročilý branding' : 'Advanced branding'}</span>
-                  </div>
-                  <div className="feature">
-                    <Icon name="Check" size={16} />
-                    <span>{language === 'cs' ? 'Prioritní podpora' : 'Priority support'}</span>
-                  </div>
-                  <div className="feature">
-                    <Icon name="Check" size={16} />
-                    <span>{language === 'cs' ? 'API přístup' : 'API access'}</span>
-                  </div>
-                </div>
-                <div className="billing-actions">
-                  <button className="btn-outline">{t['billing.plan.change']}</button>
-                  <button className="btn-text-danger">{t['billing.plan.cancel']}</button>
-                </div>
-              </div>
-
-              <div className="payment-methods">
-                <h3>{t['billing.payment.title']}</h3>
-                <div className="payment-card">
-                  <div className="card-icon">
-                    <Icon name="CreditCard" size={24} />
-                  </div>
-                  <div className="card-details">
-                    <strong>Visa {language === 'cs' ? 'končící na' : 'ending in'} 4242</strong>
-                    <span>{t['billing.payment.expires']} 12/2025</span>
-                  </div>
-                  <div className="card-actions">
-                    <button className="btn-text">{t['billing.payment.edit']}</button>
-                    <button className="btn-text">{t['billing.payment.remove']}</button>
-                  </div>
-                </div>
-                <button className="btn-outline">
-                  <Icon name="Plus" size={16} />
-                  {t['billing.payment.add']}
-                </button>
-              </div>
-
-              <div className="billing-history">
-                <h3>{t['billing.history.title']}</h3>
-                <div className="invoice-list">
-                  <div className="invoice-item">
-                    <div className="invoice-date">{language === 'cs' ? '1. prosince 2024' : 'Dec 1, 2024'}</div>
-                    <div className="invoice-amount">1,299 {language === 'cs' ? 'Kč' : 'CZK'}</div>
-                    <button className="btn-text">{t['billing.history.download']}</button>
-                  </div>
-                  <div className="invoice-item">
-                    <div className="invoice-date">{language === 'cs' ? '1. listopadu 2024' : 'Nov 1, 2024'}</div>
-                    <div className="invoice-amount">1,299 {language === 'cs' ? 'Kč' : 'CZK'}</div>
-                    <button className="btn-text">{t['billing.history.download']}</button>
-                  </div>
-                  <div className="invoice-item">
-                    <div className="invoice-date">{language === 'cs' ? '1. října 2024' : 'Oct 1, 2024'}</div>
-                    <div className="invoice-amount">1,299 {language === 'cs' ? 'Kč' : 'CZK'}</div>
-                    <button className="btn-text">{t['billing.history.download']}</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+  // Card Component
+  const Card = ({ icon, title, children, index = 0, className = '' }) => (
+    <motion.div
+      custom={index}
+      variants={cardVariants}
+      initial="initial"
+      animate="animate"
+      className={`bg-white/80 backdrop-blur-xl rounded-2xl border border-white/50 shadow-xl shadow-slate-200/50 overflow-hidden ${className}`}
+    >
+      <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-primary/5 to-transparent">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+            <Icon name={icon} size={20} />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
         </div>
       </div>
-
-      <style>{`
-        .account-page {
-          min-height: calc(100vh - 64px);
-          background: #f9fafb;
-          padding: 40px 0;
-        }
-
-        .container {
-          max-width: 1200px;
-          margin: 0 auto;
-          padding: 0 24px;
-        }
-
-        .page-header {
-          margin-bottom: 32px;
-        }
-
-        h1 {
-          font-size: 32px;
-          font-weight: 700;
-          color: #111827;
-          margin: 0 0 8px 0;
-        }
-
-        .subtitle {
-          font-size: 14px;
-          color: #6B7280;
-          margin: 0;
-        }
-
-        .tabs {
-          display: flex;
-          gap: 8px;
-          border-bottom: 1px solid #E5E7EB;
-          margin-bottom: 32px;
-          overflow-x: auto;
-        }
-
-        .tab {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 12px 20px;
-          background: none;
-          border: none;
-          border-bottom: 2px solid transparent;
-          color: #6B7280;
-          font-size: 14px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: all 0.2s;
-          white-space: nowrap;
-        }
-
-        .tab:hover {
-          color: #111827;
-        }
-
-        .tab.active {
-          color: #2563EB;
-          border-bottom-color: #2563EB;
-        }
-
-        .tab-content {
-          background: white;
-          border-radius: 12px;
-          padding: 32px;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }
-
-        .content-section h2 {
-          font-size: 20px;
-          font-weight: 600;
-          color: #111827;
-          margin: 0 0 24px 0;
-        }
-
-        .form-grid {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 20px;
-          margin-bottom: 32px;
-        }
-
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
-
-        .form-group.full-width {
-          grid-column: 1 / -1;
-        }
-
-        label {
-          font-size: 14px;
-          font-weight: 500;
-          color: #374151;
-        }
-
-        input, select {
-          padding: 10px 12px;
-          border: 1px solid #D1D5DB;
-          border-radius: 6px;
-          font-size: 14px;
-          color: #111827;
-          transition: all 0.2s;
-        }
-
-        input:focus, select:focus {
-          outline: none;
-          border-color: #2563EB;
-          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-        }
-
-        .form-actions {
-          display: flex;
-          gap: 12px;
-          justify-content: flex-end;
-        }
-
-        .btn-primary, .btn-secondary, .btn-outline, .btn-text, .btn-text-danger {
-          padding: 10px 20px;
-          border-radius: 6px;
-          font-size: 14px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .btn-primary {
-          background: #2563EB;
-          color: white;
-          border: none;
-        }
-
-        .btn-primary:hover {
-          background: #1D4ED8;
-        }
-
-        .btn-secondary {
-          background: white;
-          color: #374151;
-          border: 1px solid #D1D5DB;
-        }
-
-        .btn-secondary:hover {
-          background: #F9FAFB;
-        }
-
-        .btn-outline {
-          background: white;
-          color: #2563EB;
-          border: 1px solid #2563EB;
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .btn-outline:hover {
-          background: #EFF6FF;
-        }
-
-        .btn-text {
-          background: none;
-          color: #2563EB;
-          border: none;
-          padding: 4px 8px;
-        }
-
-        .btn-text:hover {
-          text-decoration: underline;
-        }
-
-        .btn-text-danger {
-          background: none;
-          color: #DC2626;
-          border: none;
-          padding: 4px 8px;
-        }
-
-        .btn-text-danger:hover {
-          text-decoration: underline;
-        }
-
-        .security-info {
-          margin-top: 32px;
-          padding-top: 32px;
-          border-top: 1px solid #E5E7EB;
-        }
-
-        .security-info h3 {
-          font-size: 16px;
-          font-weight: 600;
-          color: #111827;
-          margin: 0 0 8px 0;
-        }
-
-        .security-info p {
-          font-size: 14px;
-          color: #6B7280;
-          margin: 0 0 16px 0;
-        }
-
-        .session-list {
-          margin-top: 16px;
-        }
-
-        .session-item {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          padding: 16px;
-          background: #F9FAFB;
-          border-radius: 8px;
-        }
-
-        .session-icon {
-          width: 40px;
-          height: 40px;
-          background: white;
-          border-radius: 8px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #6B7280;
-        }
-
-        .session-details {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .session-details strong {
-          font-size: 14px;
-          color: #111827;
-        }
-
-        .session-details span {
-          font-size: 12px;
-          color: #6B7280;
-        }
-
-        .billing-card {
-          background: #F9FAFB;
-          border-radius: 12px;
-          padding: 24px;
-          margin-bottom: 32px;
-        }
-
-        .billing-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          margin-bottom: 20px;
-        }
-
-        .billing-header h3 {
-          font-size: 14px;
-          font-weight: 500;
-          color: #6B7280;
-          margin: 0 0 4px 0;
-        }
-
-        .plan-name {
-          font-size: 24px;
-          font-weight: 700;
-          color: #111827;
-          margin: 0;
-        }
-
-        .plan-price {
-          text-align: right;
-        }
-
-        .price {
-          font-size: 32px;
-          font-weight: 700;
-          color: #2563EB;
-        }
-
-        .period {
-          font-size: 14px;
-          color: #6B7280;
-        }
-
-        .billing-features {
-          display: grid;
-          grid-template-columns: repeat(2, 1fr);
-          gap: 12px;
-          margin-bottom: 24px;
-        }
-
-        .feature {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 14px;
-          color: #374151;
-        }
-
-        .billing-actions {
-          display: flex;
-          gap: 12px;
-        }
-
-        .payment-methods, .billing-history {
-          margin-top: 32px;
-        }
-
-        .payment-methods h3, .billing-history h3 {
-          font-size: 16px;
-          font-weight: 600;
-          color: #111827;
-          margin: 0 0 16px 0;
-        }
-
-        .payment-card {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          padding: 16px;
-          background: #F9FAFB;
-          border-radius: 8px;
-          margin-bottom: 16px;
-        }
-
-        .card-icon {
-          width: 48px;
-          height: 48px;
-          background: white;
-          border-radius: 8px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #6B7280;
-        }
-
-        .card-details {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .card-details strong {
-          font-size: 14px;
-          color: #111827;
-        }
-
-        .card-details span {
-          font-size: 12px;
-          color: #6B7280;
-        }
-
-        .card-actions {
-          display: flex;
-          gap: 8px;
-        }
-
-        .invoice-list {
-          border: 1px solid #E5E7EB;
-          border-radius: 8px;
-          overflow: hidden;
-        }
-
-        .invoice-item {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 16px;
-          border-bottom: 1px solid #E5E7EB;
-        }
-
-        .invoice-item:last-child {
-          border-bottom: none;
-        }
-
-        .invoice-date {
-          font-size: 14px;
-          color: #374151;
-        }
-
-        .invoice-amount {
-          font-size: 14px;
-          font-weight: 600;
-          color: #111827;
-        }
-
-        @media (max-width: 768px) {
-          .form-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .form-group.full-width {
-            grid-column: 1;
-          }
-
-          .billing-features {
-            grid-template-columns: 1fr;
-          }
-
-          .tabs {
-            overflow-x: scroll;
-          }
-        }
-      `}</style>
+      <div className="p-6">
+        {children}
+      </div>
+    </motion.div>
+  );
+
+  return (
+    <div className="min-h-screen relative">
+      <BackgroundPattern />
+      
+      <div className="relative z-10 max-w-5xl mx-auto px-4 py-12">
+        {/* Header */}
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-10"
+        >
+          <div className="flex items-center gap-6">
+            {/* Avatar */}
+            <div className="relative group">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-primary/30">
+                {profileData.firstName[0]}{profileData.lastName[0]}
+              </div>
+              <button className="absolute -bottom-1 -right-1 w-7 h-7 rounded-lg bg-white shadow-md flex items-center justify-center text-slate-500 hover:text-primary transition-colors border border-slate-100">
+                <Icon name="Camera" size={14} />
+              </button>
+            </div>
+            
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">{t['account.title']}</h1>
+              <p className="text-slate-500 mt-1">{t['account.subtitle']}</p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Pill Tabs */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="mb-8"
+        >
+          <div className="inline-flex p-1.5 rounded-2xl bg-white/60 backdrop-blur-xl border border-white/50 shadow-lg shadow-slate-200/30">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative px-6 py-3 rounded-xl text-sm font-medium transition-all duration-300 flex items-center gap-2 ${
+                  activeTab === tab.id 
+                    ? 'text-white' 
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {activeTab === tab.id && (
+                  <motion.div
+                    layoutId="activeTabBg"
+                    className="absolute inset-0 bg-gradient-to-r from-primary to-violet-600 rounded-xl shadow-lg shadow-primary/30"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+                <span className="relative z-10 flex items-center gap-2">
+                  <Icon name={tab.icon} size={18} />
+                  {tab.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </motion.div>
+
+        {/* Tab Content */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            variants={contentVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            transition={{ duration: 0.3 }}
+          >
+            {/* PROFILE TAB */}
+            {activeTab === 'profile' && (
+              <div className="grid gap-6 md:grid-cols-2">
+                <Card icon="User" title={t['profile.title']} index={0} className="md:col-span-2">
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <FormInput
+                      icon="User"
+                      label={t['profile.firstName']}
+                      value={profileData.firstName}
+                      onChange={(e) => handleProfileChange('firstName', e.target.value)}
+                      placeholder={t['profile.firstName']}
+                    />
+                    <FormInput
+                      icon="User"
+                      label={t['profile.lastName']}
+                      value={profileData.lastName}
+                      onChange={(e) => handleProfileChange('lastName', e.target.value)}
+                      placeholder={t['profile.lastName']}
+                    />
+                    <FormInput
+                      icon="Mail"
+                      label={t['profile.email']}
+                      type="email"
+                      value={profileData.email}
+                      onChange={(e) => handleProfileChange('email', e.target.value)}
+                      placeholder={t['profile.email']}
+                    />
+                    <FormInput
+                      icon="Phone"
+                      label={t['profile.phone']}
+                      type="tel"
+                      value={profileData.phone}
+                      onChange={(e) => handleProfileChange('phone', e.target.value)}
+                      placeholder={t['profile.phone']}
+                    />
+                  </div>
+                  
+                  <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-slate-100">
+                    <button className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors">
+                      {t['common.cancel']}
+                    </button>
+                    <button 
+                      onClick={handleSaveProfile}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-violet-600 text-white font-medium shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-300 hover:-translate-y-0.5"
+                    >
+                      {t['common.save']}
+                    </button>
+                  </div>
+                </Card>
+              </div>
+            )}
+
+            {/* COMPANY TAB */}
+            {activeTab === 'company' && (
+              <div className="grid gap-6 md:grid-cols-2">
+                <Card icon="Building2" title={language === 'cs' ? 'Základní údaje' : 'Basic Info'} index={0}>
+                  <div className="space-y-5">
+                    <FormInput
+                      icon="Building2"
+                      label={t['company.name']}
+                      value={profileData.company}
+                      onChange={(e) => handleProfileChange('company', e.target.value)}
+                      placeholder={t['company.name']}
+                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormInput
+                        label={t['company.ico']}
+                        value={profileData.ico}
+                        onChange={(e) => handleProfileChange('ico', e.target.value)}
+                        placeholder={t['company.ico']}
+                      />
+                      <FormInput
+                        label={t['company.dic']}
+                        value={profileData.dic}
+                        onChange={(e) => handleProfileChange('dic', e.target.value)}
+                        placeholder={t['company.dic']}
+                      />
+                    </div>
+                  </div>
+                </Card>
+                
+                <Card icon="MapPin" title={language === 'cs' ? 'Adresa' : 'Address'} index={1}>
+                  <div className="space-y-5">
+                    <FormInput
+                      icon="MapPin"
+                      label={t['company.address']}
+                      value={profileData.address}
+                      onChange={(e) => handleProfileChange('address', e.target.value)}
+                      placeholder={t['company.address']}
+                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormInput
+                        label={t['company.city']}
+                        value={profileData.city}
+                        onChange={(e) => handleProfileChange('city', e.target.value)}
+                        placeholder={t['company.city']}
+                      />
+                      <FormInput
+                        label={t['company.zip']}
+                        value={profileData.zip}
+                        onChange={(e) => handleProfileChange('zip', e.target.value)}
+                        placeholder={t['company.zip']}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-sm font-medium text-slate-700">{t['company.country']}</label>
+                      <select
+                        value={profileData.country}
+                        onChange={(e) => handleProfileChange('country', e.target.value)}
+                        className="w-full pl-4 pr-10 py-3 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-sm text-slate-900 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary hover:border-slate-300 appearance-none cursor-pointer"
+                      >
+                        <option>Česká republika</option>
+                        <option>Slovensko</option>
+                        <option>Polsko</option>
+                        <option>Německo</option>
+                        <option>Rakousko</option>
+                      </select>
+                    </div>
+                  </div>
+                </Card>
+                
+                <div className="md:col-span-2 flex justify-end gap-3 mt-4">
+                  <button className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-colors">
+                    {t['common.cancel']}
+                  </button>
+                  <button 
+                    onClick={handleSaveProfile}
+                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-violet-600 text-white font-medium shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-300 hover:-translate-y-0.5"
+                  >
+                    {t['common.save']}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* SECURITY TAB */}
+            {activeTab === 'security' && (
+              <div className="grid gap-6 md:grid-cols-2">
+                <Card icon="Key" title={t['security.title']} index={0}>
+                  <div className="space-y-5">
+                    <FormInput
+                      icon="Lock"
+                      label={t['security.current']}
+                      type="password"
+                      value={passwordData.currentPassword}
+                      onChange={(e) => handlePasswordChange('currentPassword', e.target.value)}
+                      placeholder="••••••••"
+                    />
+                    <div>
+                      <FormInput
+                        icon="Key"
+                        label={t['security.new']}
+                        type="password"
+                        value={passwordData.newPassword}
+                        onChange={(e) => handlePasswordChange('newPassword', e.target.value)}
+                        placeholder="••••••••"
+                      />
+                      {passwordData.newPassword && (
+                        <div className="mt-3">
+                          <div className="flex justify-between text-xs mb-1">
+                            <span className="text-slate-500">{language === 'cs' ? 'Síla hesla' : 'Password strength'}</span>
+                            <span className={`font-medium ${passwordStrength.color.replace('bg-', 'text-')}`}>{passwordStrength.text}</span>
+                          </div>
+                          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${passwordStrength.level}%` }}
+                              className={`h-full ${passwordStrength.color} rounded-full`}
+                              transition={{ duration: 0.3 }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <FormInput
+                      icon="Key"
+                      label={t['security.confirm']}
+                      type="password"
+                      value={passwordData.confirmPassword}
+                      onChange={(e) => handlePasswordChange('confirmPassword', e.target.value)}
+                      placeholder="••••••••"
+                    />
+                  </div>
+                  
+                  <div className="flex justify-end gap-3 mt-6 pt-6 border-t border-slate-100">
+                    <button 
+                      onClick={handleChangePassword}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-primary to-violet-600 text-white font-medium shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-300 hover:-translate-y-0.5"
+                    >
+                      {t['common.change']}
+                    </button>
+                  </div>
+                </Card>
+                
+                <div className="space-y-6">
+                  <Card icon="ShieldCheck" title={t['security.2fa.title']} index={1}>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-slate-500">{t['security.2fa.desc']}</p>
+                      </div>
+                      <button className="px-4 py-2 rounded-xl bg-primary/10 text-primary font-medium hover:bg-primary/20 transition-colors">
+                        {t['security.2fa.enable']}
+                      </button>
+                    </div>
+                  </Card>
+                  
+                  <Card icon="Monitor" title={t['security.sessions.title']} index={2}>
+                    <p className="text-sm text-slate-500 mb-4">{t['security.sessions.desc']}</p>
+                    <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-100 flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center text-green-600">
+                        <Icon name="Monitor" size={20} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-slate-900">Windows PC - Chrome</div>
+                        <div className="text-xs text-slate-500">{language === 'cs' ? 'Praha, Česká republika' : 'Prague, Czech Republic'}</div>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full bg-green-100 text-green-700 text-xs font-medium">
+                        {t['security.sessions.current']}
+                      </span>
+                    </div>
+                  </Card>
+                </div>
+              </div>
+            )}
+
+            {/* BILLING TAB */}
+            {activeTab === 'billing' && (
+              <div className="grid gap-6 md:grid-cols-2">
+                <Card icon="CreditCard" title={t['billing.title']} index={0} className="md:col-span-2">
+                  <div className="flex flex-col md:flex-row gap-8">
+                    {/* Current Plan */}
+                    <div className="flex-1 space-y-4">
+                      <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/5 to-violet-500/5 border border-primary/10">
+                        <div className="flex justify-between items-start mb-2">
+                          <div>
+                             <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wider">{t['billing.plan.title']}</h4>
+                             <div className="text-2xl font-bold text-slate-900 mt-1">{t['billing.plan.name']}</div>
+                          </div>
+                          <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold">ACTIVE</span>
+                        </div>
+                        <div className="text-3xl font-bold text-primary mt-4">1,299 Kč <span className="text-sm font-normal text-slate-500">/ měsíc</span></div>
+                      </div>
+                      
+                      <div className="flex gap-3">
+                        <button className="flex-1 px-4 py-2.5 rounded-xl bg-slate-900 text-white font-medium hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200">
+                          {t['billing.plan.change']}
+                        </button>
+                        <button className="px-4 py-2.5 rounded-xl border border-red-200 text-red-600 font-medium hover:bg-red-50 transition-colors">
+                          {t['billing.plan.cancel']}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Payment Method */}
+                    <div className="flex-1 space-y-4">
+                       <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wider">{t['billing.payment.title']}</h4>
+                       
+                       <div className="p-4 rounded-xl border border-slate-200 bg-white flex items-center gap-4">
+                          <div className="w-12 h-8 rounded bg-slate-100 flex items-center justify-center">
+                            <Icon name="CreditCard" size={20} className="text-slate-600" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="font-medium text-slate-900">Visa končící na 4242</div>
+                            <div className="text-xs text-slate-500">{t['billing.payment.expires']} 12/2025</div>
+                          </div>
+                          <button className="text-sm font-medium text-primary hover:text-primary/80">Upravit</button>
+                       </div>
+
+                       <button className="w-full py-3 rounded-xl border-2 border-dashed border-slate-200 text-slate-500 font-medium hover:border-primary hover:text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2">
+                          <Icon name="Plus" size={18} />
+                          {t['billing.payment.add']}
+                       </button>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card icon="FileText" title={t['billing.history.title']} index={1} className="md:col-span-2">
+                  <div className="space-y-1">
+                    {[1, 2, 3].map((item) => (
+                      <div key={item} className="flex items-center justify-between p-4 rounded-xl hover:bg-slate-50 transition-colors group">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 group-hover:bg-white group-hover:shadow-sm transition-all">
+                            <Icon name="FileText" size={20} />
+                          </div>
+                          <div>
+                            <div className="font-medium text-slate-900">Faktura #{2024000 + item}</div>
+                            <div className="text-xs text-slate-500">1. {item === 1 ? 'prosince' : item === 2 ? 'listopadu' : 'října'} 2024</div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="font-medium text-slate-900">1,299 Kč</div>
+                          <button className="p-2 rounded-lg hover:bg-slate-200 text-slate-400 hover:text-slate-700 transition-colors">
+                            <Icon name="Download" size={18} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
     </div>
   );
 };

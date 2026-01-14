@@ -11,6 +11,7 @@ import LogoMarquee from '../../components/marketing/LogoMarquee';
 import SpotlightCard from '../../components/marketing/SpotlightCard';
 import ImageRipple from '../../components/marketing/ImageRipple';
 import GlobalMap from '../../components/marketing/GlobalMap';
+import InteractiveWorldMap from '../../components/marketing/InteractiveWorldMap';
 
 import Accordion from '../../components/marketing/Accordion';
 import Reveal from '../../components/marketing/Reveal';
@@ -555,6 +556,19 @@ const Home = () => {
             <div className="order-1 flex justify-center lg:order-2 lg:justify-end">
               <GlobalMap />
             </div>
+          </div>
+        </Reveal>
+      </section>
+
+      {/* NEW INTERACTIVE MAP (Comparison) */}
+      <section className="mx-auto max-w-6xl px-4 py-8 sm:py-12">
+        <Reveal>
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold tracking-tight text-center">Interaktivní mapa (Nová verze)</h2>
+            <p className="mt-3 text-center text-muted-foreground">Detailnější a interaktivnější pohled na globální pokrytí.</p>
+          </div>
+          <div className="w-full">
+            <InteractiveWorldMap />
           </div>
         </Reveal>
       </section>
