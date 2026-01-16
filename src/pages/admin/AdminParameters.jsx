@@ -147,63 +147,112 @@ function roundToStep(value, step, mode) {
   return Math.round(q) * s;
 }
 
+/**
+ * TOGGLE "AKTIVNÍ" - BUDOUCÍ FUNKCIONALITA
+ * =========================================
+ * Pole visible_in_widget určuje, zda bude parametr VIDITELNÝ v zákaznické kalkulačce:
+ * 
+ * - TRUE (zelená): Parametr se zobrazí zákazníkovi v kalkulačce. Zákazník může změnit
+ *   jeho hodnotu podle svého uvážení. Při slicování se použije hodnota zadaná
+ *   zákazníkem místo výchozí hodnoty z admin nastavení nebo presetu.
+ *   Příklad: Infill je "Aktivní" → zákazník vidí slider 20% a může změnit na 30%.
+ * 
+ * - FALSE (červená): Parametr je skrytý před zákazníkem. Při slicování se vždy použije
+ *   výchozí hodnota z admin nastavení nebo presetu. Zákazník nemá možnost
+ *   tuto hodnotu ovlivnit.
+ * 
+ * DŮLEŽITÉ: Všechny parametry jsou VŽDY posílány do sliceru bez ohledu na toto
+ * nastavení. Toggle pouze řídí uživatelské rozhraní kalkulačky, ne logiku slicování.
+ * Data z .ini souborů (presetů) nejsou nikdy blokována.
+ */
+function GradientToggle({ checked, onChange, disabled = false }) {
+  return (
+    <label className={`gradient-toggle ${disabled ? 'disabled' : ''}`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => !disabled && onChange(e.target.checked)}
+        disabled={disabled}
+      />
+      <div className="gradient-toggle-track" />
+      <style>{`
+        .gradient-toggle {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          cursor: pointer;
+        }
+        .gradient-toggle.disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .gradient-toggle input {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          opacity: 0;
+        }
+        .gradient-toggle-track {
+          width: 44px;
+          height: 24px;
+          border-radius: 999px;
+          background: linear-gradient(to right, #fb7185, #ef4444);
+          box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+          position: relative;
+          transition: background 0.3s ease;
+        }
+        .gradient-toggle input:checked + .gradient-toggle-track {
+          background: linear-gradient(to right, #10b981, #059669);
+        }
+        .gradient-toggle-track::after {
+          content: '';
+          position: absolute;
+          top: 2px;
+          left: 2px;
+          width: 20px;
+          height: 20px;
+          border-radius: 999px;
+          background: #f9fafb;
+          border: 1px solid rgba(0,0,0,0.1);
+          box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+          transition: transform 0.3s ease;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .gradient-toggle input:checked + .gradient-toggle-track::after {
+          transform: translateX(20px);
+        }
+        .gradient-toggle input:focus + .gradient-toggle-track {
+          outline: 2px solid #6366f1;
+          outline-offset: 2px;
+        }
+      `}</style>
+    </label>
+  );
+}
+
 function Toggle({ checked, onChange, disabled = false, label, hint, rightSlot }) {
   return (
     <div className={`toggle ${disabled ? 'disabled' : ''}`}>
-      <button
-        type="button"
-        className={`toggle-switch ${checked ? 'on' : 'off'}`}
-        onClick={() => !disabled && onChange(!checked)}
-        aria-pressed={checked}
-        disabled={disabled}
-      >
-        <span className="knob" />
-      </button>
-      <div className="toggle-text">
-        <div className="toggle-title-row">
-          <div className="toggle-title">{label}</div>
-          {rightSlot}
+      <GradientToggle checked={checked} onChange={onChange} disabled={disabled} />
+      {(label || hint || rightSlot) && (
+        <div className="toggle-text">
+          <div className="toggle-title-row">
+            {label && <div className="toggle-title">{label}</div>}
+            {rightSlot}
+          </div>
+          {hint && <div className="toggle-hint">{hint}</div>}
         </div>
-        {hint && <div className="toggle-hint">{hint}</div>}
-      </div>
-
+      )}
       <style>{`
         .toggle {
           display: flex;
-          align-items: flex-start;
-          gap: 12px;
+          align-items: center;
+          gap: 10px;
         }
         .toggle.disabled {
           opacity: 0.6;
-        }
-        .toggle-switch {
-          width: 42px;
-          height: 24px;
-          border-radius: 999px;
-          border: 1px solid #D1D5DB;
-          background: #fff;
-          position: relative;
-          flex-shrink: 0;
-          cursor: pointer;
-          padding: 0;
-        }
-        .toggle-switch.on {
-          background: #2563EB;
-          border-color: #2563EB;
-        }
-        .knob {
-          position: absolute;
-          top: 3px;
-          left: 3px;
-          width: 18px;
-          height: 18px;
-          border-radius: 999px;
-          background: #fff;
-          transition: transform 0.18s ease;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.15);
-        }
-        .toggle-switch.on .knob {
-          transform: translateX(18px);
         }
         .toggle-text {
           flex: 1;
@@ -445,54 +494,43 @@ function LibraryPage({ language, defsByKey, draft, persisted, onPatchDraft, onRe
 
   return (
     <div>
-      <div className="toolbar">
-        <div className="toolbar-left">
-          <div className="search">
-            <Icon name="Search" size={18} />
+      <div className="compact-toolbar">
+        <div className="toolbar-row">
+          <div className="search-compact">
+            <Icon name="Search" size={16} />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={language === 'cs' ? 'Hledat… (label nebo klíč)' : 'Search… (label or key)'}
+              placeholder={language === 'cs' ? 'Hledat…' : 'Search…'}
             />
           </div>
-
-          <div className="filters">
-            <select value={group} onChange={(e) => setGroup(e.target.value)}>
-              <option value="">{language === 'cs' ? 'Všechny skupiny' : 'All groups'}</option>
-              {groups.map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
-
-            <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
-              <option value="">{language === 'cs' ? 'Všechny typy' : 'All types'}</option>
-              <option value="number">number</option>
-              <option value="boolean">boolean</option>
-              <option value="enum">enum</option>
-              <option value="string">string</option>
-            </select>
-
-            <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)}>
-              <option value="basic">{language === 'cs' ? 'Úroveň: Basic' : 'Level: Basic'}</option>
-              <option value="mid">{language === 'cs' ? 'Úroveň: Mid' : 'Level: Mid'}</option>
-              <option value="pro">{language === 'cs' ? 'Úroveň: Pro' : 'Level: Pro'}</option>
-            </select>
-
-            <button className={`chip ${onlyActive ? 'on' : ''}`} onClick={() => setOnlyActive(v => !v)}>
-              {language === 'cs' ? 'Jen aktivní' : 'Active only'}
-            </button>
-            <button className={`chip ${onlyChanged ? 'on' : ''}`} onClick={() => setOnlyChanged(v => !v)}>
-              {language === 'cs' ? 'Jen změněné' : 'Changed only'}
-            </button>
-          </div>
-        </div>
-
-        <div className="toolbar-right">
-          <Badge tone={changedCountVsCatalog ? 'amber' : 'gray'}>
-            {changedCountVsCatalog}
-            {language === 'cs' ? ' změn vůči defaultu' : ' changes vs default'}
-          </Badge>
+          <select value={group} onChange={(e) => setGroup(e.target.value)} className="filter-select">
+            <option value="">{language === 'cs' ? 'Skupiny' : 'Groups'}</option>
+            {groups.map(g => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="filter-select">
+            <option value="">{language === 'cs' ? 'Typ' : 'Type'}</option>
+            <option value="number">number</option>
+            <option value="boolean">boolean</option>
+            <option value="enum">enum</option>
+            <option value="string">string</option>
+          </select>
+          <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="filter-select">
+            <option value="basic">Basic</option>
+            <option value="mid">Mid</option>
+            <option value="pro">Pro</option>
+          </select>
+          <button className={`filter-chip ${onlyActive ? 'active' : ''}`} onClick={() => setOnlyActive(v => !v)}>
+            {language === 'cs' ? 'Aktivní' : 'Active'}
+          </button>
+          <button className={`filter-chip ${onlyChanged ? 'active' : ''}`} onClick={() => setOnlyChanged(v => !v)}>
+            {language === 'cs' ? 'Změněné' : 'Changed'}
+          </button>
+          <div className="toolbar-spacer" />
+          <span className="changes-badge">{changedCountVsCatalog} {language === 'cs' ? 'změn' : 'changes'}</span>
           <button className="btn primary" onClick={onSave} disabled={saveDisabled}>
             <Icon name="Save" size={16} />
-            {language === 'cs' ? 'Uložit změny' : 'Save changes'}
+            {language === 'cs' ? 'Uložit' : 'Save'}
           </button>
         </div>
       </div>
@@ -772,36 +810,30 @@ function ParamRow({ def, row, selected, onToggleSelected, onChange, language }) 
       : def.unit
     : null;
 
-  function formatDefault(v) {
-    if (v === null || typeof v === 'undefined') return '—';
-    if (typeof v === 'boolean') return v ? 'true' : 'false';
-    if (typeof v === 'number') return String(v);
-    if (Array.isArray(v)) return v.join(', ');
-    return String(v);
-  }
-
+  // cliKey: def.key (e.g. "fill_density") - used for slicer CLI commands
   function setOverride(next) {
-    onChange(def.key, { ...row, default_value_override: next });
+    onChange({ ...row, default_value_override: next });
   }
 
   function setActive(next) {
-    onChange(def.key, { ...row, active_for_slicing: next });
+    onChange({ ...row, active_for_slicing: next });
   }
 
   function renderValueInput() {
     // boolean
     if (def.dataType === 'boolean') {
-      const v = value === null ? '__default__' : String(value);
+      // Show effective value (override or default)
+      const effective = value === null ? def.defaultValue : value;
+      const effectiveStr = String(effective);
       return (
         <select
-          value={v}
+          value={effectiveStr}
           onChange={(e) => {
             const raw = e.target.value;
-            if (raw === '__default__') return setOverride(null);
             setOverride(raw === 'true');
           }}
+          className={value === null ? 'is-default' : ''}
         >
-          <option value="__default__">{defaultLabel}</option>
           <option value="true">true</option>
           <option value="false">false</option>
         </select>
@@ -810,60 +842,57 @@ function ParamRow({ def, row, selected, onToggleSelected, onChange, language }) 
 
     // enum
     if (def.dataType === 'enum') {
-      const v = value === null ? '__default__' : String(value);
+      const effective = value === null ? def.defaultValue : value;
       return (
         <select
-          value={v}
+          value={effective}
           onChange={(e) => {
-            const raw = e.target.value;
-            if (raw === '__default__') return setOverride(null);
-            setOverride(raw);
+            setOverride(e.target.value);
           }}
+          className={value === null ? 'is-default' : ''}
         >
-          <option value="__default__">{defaultLabel}</option>
-          {(def.enumValues || []).map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
+          {(def.options || def.enumValues || []).map((opt) => {
+             // Handle both object options {value, label} and string arrays
+             const val = typeof opt === 'object' ? opt.value : opt;
+             const lbl = typeof opt === 'object' ? opt.label : opt;
+             return (
+               <option key={val} value={val}>
+                 {lbl}
+               </option>
+             );
+          })}
         </select>
       );
     }
 
     // number-like
     if (def.dataType === 'number') {
-      const v = value === null ? '' : String(value);
+      const effective = value === null ? def.defaultValue : value;
       return (
         <input
           type="number"
-          value={v}
-          placeholder={defaultLabel}
+          value={effective}
           onChange={(e) => {
             const raw = e.target.value;
             if (raw === '') return setOverride(null);
             const num = Number(raw);
             if (Number.isFinite(num)) setOverride(num);
           }}
+          className={value === null ? 'is-default' : ''}
         />
       );
     }
 
     // string (incl. gcode snippets)
-    {
-      const v = value === null ? '' : String(value);
-      return (
-        <input
-          type="text"
-          value={v}
-          placeholder={defaultLabel}
-          onChange={(e) => {
-            const raw = e.target.value;
-            if (raw.trim() === '') return setOverride(null);
-            setOverride(raw);
-          }}
-        />
-      );
-    }
+    const effective = value === null ? def.defaultValue : value;
+    return (
+      <textarea
+        className={`code-input ${value === null ? 'is-default' : ''}`}
+        value={effective}
+        onChange={(e) => setOverride(e.target.value)}
+        rows={def.dataType === 'gcode' ? 3 : 1}
+      />
+    );
   }
 
   return (
@@ -929,21 +958,7 @@ function ParamRow({ def, row, selected, onToggleSelected, onChange, language }) 
           </button>
         </div>
 
-        <div className="meta">
-          <span>
-            {language === 'cs' ? 'Výchozí:' : 'Default:'} {formatDefault(def.defaultValue)}
-          </span>
-          {def.min !== null && typeof def.min !== 'undefined' ? (
-            <span>
-              min {def.min}
-              {def.max !== null && typeof def.max !== 'undefined' ? ` · max ${def.max}` : ''}
-            </span>
-          ) : def.max !== null && typeof def.max !== 'undefined' ? (
-            <span>max {def.max}</span>
-          ) : (
-            <span />
-          )}
-        </div>
+
 
         {hasError ? <div className="error">{row.validation_error}</div> : null}
       </div>
@@ -2205,6 +2220,84 @@ export default function AdminParameters() {
           .admin-parameters { max-width: none; }
           .page-header { flex-direction: column; align-items: stretch; }
           .tabs-right { margin-left: 0; }
+        }
+
+        /* Compact Toolbar Styles */
+        .compact-toolbar {
+          background: #fff;
+          border-bottom: 1px solid #e5e7eb;
+          padding: 12px 24px;
+          margin: -24px -24px 20px -24px;
+          position: sticky;
+          top: 0;
+          z-index: 100;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        }
+        .toolbar-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .search-compact {
+          position: relative;
+          width: 240px;
+        }
+        .search-compact input {
+          width: 100%;
+          padding: 6px 10px 6px 32px;
+          border-radius: 6px !important;
+          font-size: 13px;
+          height: 32px;
+          border: 1px solid #e5e7eb;
+        }
+        .search-compact .lucide {
+          position: absolute;
+          left: 10px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #9ca3af;
+        }
+        .filter-select {
+          width: auto;
+          height: 32px;
+          padding: 0 24px 0 10px !important;
+          font-size: 13px;
+          border-radius: 6px !important;
+          border: 1px solid #e5e7eb;
+          background: #fff;
+        }
+        .filter-chip {
+          height: 32px;
+          padding: 0 12px;
+          border-radius: 6px;
+          border: 1px solid #e5e7eb;
+          background: #fff;
+          font-size: 13px;
+          font-weight: 500;
+          color: #374151;
+          cursor: pointer;
+          transition: all 0.15s;
+          display: flex;
+          align-items: center;
+        }
+        .filter-chip:hover {
+          background: #f9fafb;
+          border-color: #d1d5db;
+        }
+        .filter-chip.active {
+          background: #eff6ff;
+          border-color: #bfdbfe;
+          color: #2563eb;
+        }
+        .toolbar-spacer {
+          flex: 1;
+        }
+        .changes-badge {
+          font-size: 12px;
+          color: #6b7280;
+          font-weight: 500;
+          white-space: nowrap;
         }
       `}</style>
     </div>
