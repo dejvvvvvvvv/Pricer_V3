@@ -28,6 +28,23 @@ export default defineConfig({
     port: "4028",
     host: "0.0.0.0",
     strictPort: true,
+    // Local dev proxy to backend-local (Express) on :3001.
+    // IMPORTANT: backend-local has CORS allowlist; we strip the Origin header
+    // so the request behaves like a same-origin server-side call.
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        // Keep /api prefix on the backend
+        rewrite: (path) => path,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.removeHeader('origin');
+            proxyReq.removeHeader('Origin');
+          });
+        },
+      },
+    },
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',

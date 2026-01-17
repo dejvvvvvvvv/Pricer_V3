@@ -7,6 +7,8 @@ import FileUploadZone from './components/FileUploadZone';
 import ModelViewer from './components/ModelViewer';
 import PrintConfiguration from './components/PrintConfiguration';
 import PricingCalculator from './components/PricingCalculator';
+import GenerateButton from './components/GenerateButton';
+import { sliceModelLocal } from '../../services/slicerApi';
 
 const TestKalkulacka = () => {
   const navigate = useNavigate();
@@ -14,9 +16,13 @@ const TestKalkulacka = () => {
 
   const [currentStep, setCurrentStep] = useState(1);
   const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFileId, setSelectedFileId] = useState(null);
   const [printConfigs, setPrintConfigs] = useState({});
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const selectedFile = selectedFileId
+    ? (uploadedFiles.find(f => f.id === selectedFileId) || null)
+    : null;
 
   const updateModelStatus = useCallback((modelId, newProps) => {
     setUploadedFiles(prevFiles =>
@@ -38,10 +44,14 @@ const TestKalkulacka = () => {
   ];
 
   useEffect(() => {
-    if (uploadedFiles.length > 0 && !selectedFile) {
-      setSelectedFile(uploadedFiles[0]);
+    if (uploadedFiles.length === 0) {
+      if (selectedFileId !== null) setSelectedFileId(null);
+      return;
     }
-  }, [uploadedFiles, selectedFile]);
+    // If nothing selected (or selected file was deleted), select the first one.
+    const exists = selectedFileId !== null && uploadedFiles.some(f => f.id === selectedFileId);
+    if (!exists) setSelectedFileId(uploadedFiles[0].id);
+  }, [uploadedFiles, selectedFileId]);
 
   useEffect(() => {
     if (selectedFile && !printConfigs[selectedFile.id]) {
@@ -65,74 +75,37 @@ const TestKalkulacka = () => {
     }
   }, [uploadedFiles, currentStep]);
 
-  // Automatic slicing when model is uploaded or config changes
-  useEffect(() => {
-    const run = async () => {
-      if (!selectedFile) return;
+  const handleSliceSelected = useCallback(async () => {
+    if (!selectedFile) return;
 
-      const cfg = printConfigs[selectedFile.id];
-      if (!cfg) return;
+    const cfg = printConfigs[selectedFile.id] || {};
+    if (selectedFile.status === 'processing') return;
 
-      // Skip if already processing
-      if (selectedFile.status === 'processing') return;
+    try {
+      updateModelStatus(selectedFile.id, { status: 'processing', error: null });
 
-      // Re-slice if config changed or model is pending
-      const shouldSlice = selectedFile.status === 'pending' || selectedFile.status === 'completed';
-      if (!shouldSlice) return;
+      console.log('[test-kalkulacka] Slicing (local) file:', selectedFile.name, 'config:', cfg);
 
-      try {
-        updateModelStatus(selectedFile.id, { status: 'processing', error: null });
+      const res = await sliceModelLocal(selectedFile.file);
+      const ok = (res?.ok ?? res?.success ?? true);
+      if (!ok) throw new Error(res?.error || res?.message || 'Slicování selhalo');
 
-        console.log('[ModelUpload] Starting slice for:', selectedFile.name, 'with config:', cfg);
+      updateModelStatus(selectedFile.id, {
+        status: 'completed',
+        result: res,
+        error: null,
+      });
 
-        // Import API client (using backend estimation)
-        const { sliceModel } = await import('../../lib/slicingApiClient');
-        const { calculatePrice } = await import('../../lib/pricingService');
-
-        // Prepare slicing config
-        const slicingConfig = {
-          quality: cfg.quality || 'standard',
-          infill: cfg.infill || 20,
-          material: cfg.material || 'pla',
-          supports: cfg.supports || false,
-        };
-
-        // Call backend API (estimation algorithm)
-        const result = await sliceModel(selectedFile.file, slicingConfig);
-        console.log('[ModelUpload] Slice complete:', result);
-
-        // Calculate price
-        const pricing = calculatePrice({
-          material: cfg.material || 'pla',
-          materialGrams: result.material,
-          printTimeSeconds: result.time,
-          quantity: cfg.quantity || 1,
-          expressDelivery: cfg.expressDelivery || false,
-          postProcessing: cfg.postProcessing || [],
-        });
-
-        updateModelStatus(selectedFile.id, {
-          status: 'completed',
-          result: {
-            time: result.time,
-            material: result.material,
-            layers: result.layers,
-            price: pricing.total,
-            pricing: pricing,
-          }
-        });
-
-      } catch (err) {
-        console.error('[ModelUpload] Slicing failed:', err);
-        updateModelStatus(selectedFile.id, {
-          status: 'failed',
-          error: String(err?.message || err)
-        });
-      }
-    };
-
-    run();
-  }, [selectedFile, printConfigs, updateModelStatus]);
+      // After successful slice, it's useful to show the price step.
+      if (currentStep < 3) setCurrentStep(3);
+    } catch (err) {
+      console.error('[test-kalkulacka] Slice failed:', err);
+      updateModelStatus(selectedFile.id, {
+        status: 'failed',
+        error: String(err?.message || err),
+      });
+    }
+  }, [selectedFile, printConfigs, updateModelStatus, currentStep]);
 
   const handleFilesUploaded = (uploadedItem) => {
     const fileToProcess = uploadedItem.file instanceof File ? uploadedItem.file : uploadedItem;
@@ -158,7 +131,7 @@ const TestKalkulacka = () => {
 
   const handleResetUpload = () => {
     setUploadedFiles([]);
-    setSelectedFile(null);
+    setSelectedFileId(null);
     setPrintConfigs({});
     setCurrentStep(1);
   };
@@ -171,8 +144,8 @@ const TestKalkulacka = () => {
     setUploadedFiles(newUploadedFiles);
     setPrintConfigs(newPrintConfigs);
 
-    if (selectedFile && selectedFile.id === fileToDelete.id) {
-      setSelectedFile(newUploadedFiles.length > 0 ? newUploadedFiles[0] : null);
+    if (selectedFileId !== null && selectedFileId === fileToDelete.id) {
+      setSelectedFileId(newUploadedFiles.length > 0 ? newUploadedFiles[0].id : null);
     }
     if (newUploadedFiles.length === 0) {
       handleResetUpload();
@@ -193,7 +166,7 @@ const TestKalkulacka = () => {
     navigate('/printer-catalog', { state: { uploadedFiles, printConfigs, fromUpload: true } });
   };
 
-  const currentConfig = selectedFile ? printConfigs[selectedFile.id] : {};
+  const currentConfig = selectedFile ? (printConfigs[selectedFile.id] || {}) : {};
 
   const canProceed = () => {
     switch (currentStep) {
@@ -283,24 +256,40 @@ const TestKalkulacka = () => {
 
               {uploadedFiles.length > 0 && (
                 <>
+                  {/* CTA: Spočítat cenu (Slice) */}
+                  {selectedFile && (
+                    <div className="flex justify-end">
+                      <GenerateButton
+                        label="Spočítat cenu"
+                        onClick={handleSliceSelected}
+                        loading={selectedFile.status === 'processing'}
+                        disabled={!selectedFile || selectedFile.status === 'processing'}
+                      />
+                    </div>
+                  )}
+
                   <div className={currentStep === 1 || (currentStep === 2 && selectedFile) ? 'block' : 'hidden'}>
                     <PrintConfiguration
                       key={selectedFile ? selectedFile.id : 'empty'}
                       selectedFile={selectedFile}
                       onConfigChange={handleConfigChange}
                       initialConfig={currentConfig}
-                      disabled={uploadedFiles.find(f => f.status === 'processing')}
+                      disabled={uploadedFiles.some(f => f.status === 'processing')}
                     />
                   </div>
-                  {currentStep === 3 && (
-                    <PricingCalculator files={uploadedFiles} configs={printConfigs} />
-                  )}
                 </>
               )}
             </div>
 
             <div className="space-y-6">
               <ModelViewer selectedFile={selectedFile} onRemove={handleFileDelete} />
+              {/* Metrics + price card (right column) */}
+              {uploadedFiles.length > 0 && (
+                <PricingCalculator
+                  selectedFile={selectedFile}
+                  onSlice={handleSliceSelected}
+                />
+              )}
               {uploadedFiles.length > 0 && (
                 <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-4">
                   <div className="flex justify-between items-center mb-2">
@@ -316,7 +305,7 @@ const TestKalkulacka = () => {
                         key={file.id}
                         variant={selectedFile && selectedFile.id === file.id ? 'default' : 'outline'}
                         size="sm"
-                        onClick={() => setSelectedFile(file)}
+                        onClick={() => setSelectedFileId(file.id)}
                         className="w-full justify-start text-left h-auto py-2 px-3"
                         title={statusTooltips[file.status] || 'Neznámý stav'}
                       >
