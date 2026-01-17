@@ -34,7 +34,9 @@ mkdir C:\modelpricer\profiles -Force | Out-Null
 C:\modelpricer\profiles\default.ini
 ```
 
-3) Create `.env` from `.env.example`:
+3) Create `.env` from `.env.example` (recommended).
+   - Without `.env`, the backend can still run, but you must pass `ini` in each request.
+   - With `.env`, you can set a permanent default `.ini` + (optionally) the PrusaSlicer path.
 
 ```powershell
 cd <PROJECT_ROOT>\backend-local
@@ -83,6 +85,14 @@ curl.exe -s -X POST `
     "estimatedTimeSeconds": 1234,
     "filamentGrams": 12.34,
     "filamentMm": 5678
+  },
+  "modelInfo": {
+    "sizeMm": { "x": 20, "y": 20, "z": 20 },
+    "bboxMm": {
+      "min": { "x": 0, "y": 0, "z": 0 },
+      "max": { "x": 20, "y": 20, "z": 20 }
+    },
+    "volumeMm3": 7788.19
   }
 }
 ```

@@ -12,6 +12,8 @@ import { ensureDir, fileExists } from "./util/fsSafe.js";
 import { findPrusaSlicerConsole } from "./util/findSlicer.js";
 import { runPrusaSlicer } from "./slicer/runPrusaSlicer.js";
 import { parseGcodeMetrics } from "./slicer/parseGcode.js";
+import { runPrusaInfo } from "./slicer/runPrusaInfo.js";
+import { parseModelInfo } from "./slicer/parseModelInfo.js";
 
 dotenv.config();
 
@@ -73,16 +75,9 @@ app.get("/api/health/prusa", async (_req, res) => {
       return res.status(500).json({ ok: false, error: `Slicer not found at: ${slicerCmd}` });
     }
 
-    // Quick check: some builds don't support --version (Windows portable often doesn't).
-    // Try --version first, fallback to --help.
-    let checkMethod = "--version";
-    let first = await runSimple(slicerCmd, ["--version"], 15000);
-    let final = first;
-
-    if (first.exitCode !== 0) {
-      checkMethod = "--help";
-      final = await runSimple(slicerCmd, ["--help"], 15000);
-    }
+    // Windows portable builds often don't support --version. --help is the safest truth source.
+    const checkMethod = "--help";
+    const final = await runSimple(slicerCmd, ["--help"], 15000);
 
     const stdout = truncate(final.stdout.trim(), 2000);
     const stderr = truncate(final.stderr.trim(), 2000);
@@ -93,10 +88,7 @@ app.get("/api/health/prusa", async (_req, res) => {
       checkMethod,
       exitCode: final.exitCode,
       stdout,
-      stderr,
-      // Useful when --version failed
-      initialExitCode: first.exitCode,
-      initialStderr: truncate(first.stderr.trim(), 500)
+      stderr
     });
   } catch (e) {
     res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -141,6 +133,34 @@ app.post(
       }
       if (!(await fileExists(iniPath))) {
         return res.status(400).json({ success: false, error: `INI not found: ${iniPath}` });
+      }
+
+      // Optional: get model dimensions (bounding box) before slicing.
+      // Useful for enforcing max X/Y/Z limits later.
+      let modelInfo = null;
+      let modelInfoError = "";
+      try {
+        const infoRun = await runPrusaInfo({
+          slicerCmd,
+          modelPath: modelFile.path,
+          timeoutMs: 20000
+        });
+
+        // Persist for debugging
+        if (infoRun.stderr) {
+          await fs.writeFile(path.join(req.jobDir, "prusa_info_stderr.log"), infoRun.stderr, "utf8").catch(() => {});
+        }
+        if (infoRun.stdout) {
+          await fs.writeFile(path.join(req.jobDir, "prusa_info_stdout.log"), infoRun.stdout, "utf8").catch(() => {});
+        }
+
+        if (infoRun.exitCode === 0) {
+          modelInfo = parseModelInfo(infoRun.stdout);
+        } else {
+          modelInfoError = `PrusaSlicer --info failed (exit ${infoRun.exitCode}): ${truncate(infoRun.stderr, 300)}`;
+        }
+      } catch (e) {
+        modelInfoError = `PrusaSlicer --info error: ${String(e?.message || e)}`;
       }
 
       const run = await runPrusaSlicer({
@@ -192,6 +212,8 @@ app.post(
         slicerCmd,
         iniUsed: iniPath,
         modelUsed: modelFile.originalname,
+        modelInfo,
+        modelInfoError: modelInfoError || undefined,
         metrics
       });
     } catch (e) {
