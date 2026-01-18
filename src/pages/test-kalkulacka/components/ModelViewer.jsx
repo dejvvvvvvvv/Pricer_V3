@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
@@ -31,6 +31,7 @@ function STLModel({ url }) {
 
 function STLCanvas({ file }) {
   const url = useMemo(() => URL.createObjectURL(file), [file]);
+  const canvasWrapRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -42,8 +43,21 @@ function STLCanvas({ file }) {
     };
   }, [url]);
 
+  // Prevent the page from scrolling when the user zooms the 3D view using the mouse wheel.
+  // OrbitControls uses the wheel event for zoom, but browsers also scroll the page by default.
+  useEffect(() => {
+    const el = canvasWrapRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
   return (
-    <div className="w-full h-full bg-muted/30 rounded-xl overflow-hidden">
+    <div ref={canvasWrapRef} className="w-full h-full bg-muted/30 rounded-xl overflow-hidden">
       <Canvas camera={{ position: [0, 0, 100], fov: 50 }} dpr={[1, 1.5]}>
         <ambientLight intensity={0.8} />
         <directionalLight position={[10, 10, 10]} intensity={0.8} />

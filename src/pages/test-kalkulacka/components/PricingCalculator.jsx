@@ -35,7 +35,6 @@ const PricingCalculator = ({
   onSliceAll,
   sliceAllLoading = false,
 }) => {
-
   // --- Initial State: No file selected ---
   if (!selectedFile) {
     return (
@@ -52,8 +51,34 @@ const PricingCalculator = ({
   }
 
   const { status, result, error } = selectedFile;
-
   const showSliceAll = typeof onSliceAll === 'function' && Number(totalModels) > 1;
+
+  const ActionButtons = () => {
+    if (typeof onSlice !== 'function') return null;
+
+    // Single-model variant: one compact button.
+    if (!showSliceAll) {
+      return (
+        <div className="mt-6 flex justify-center">
+          <GenerateButton label="Spočítat cenu" onClick={onSlice} size="compact" />
+        </div>
+      );
+    }
+
+    // Multi-model variant: two compact buttons side-by-side.
+    return (
+      <div className="mt-6 flex justify-center gap-3 flex-wrap">
+        <GenerateButton label="Spočítat cenu" onClick={onSlice} size="compact" disabled={sliceAllLoading} />
+        <GenerateButton
+          label="Spočítat vše"
+          onClick={onSliceAll}
+          loading={sliceAllLoading}
+          disabled={sliceAllLoading}
+          size="compact"
+        />
+      </div>
+    );
+  };
 
   // --- Loading State: Pending or Processing ---
   if (status === 'processing') {
@@ -73,20 +98,8 @@ const PricingCalculator = ({
       <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-8 text-center">
         <Icon name="XCircle" size={24} className="text-destructive mx-auto mb-4" />
         <h3 className="text-lg font-semibold text-destructive mb-2">Výpočet se nezdařil</h3>
-        <p className="text-sm text-destructive/80 mb-6">{error || "Došlo k neznámé chybě."}</p>
-        {typeof onSlice === 'function' && (
-          <div className="mt-2 flex flex-col items-center gap-3">
-            <GenerateButton label="Spočítat cenu" onClick={onSlice} />
-            {showSliceAll && (
-              <GenerateButton
-                label="Spočítat vše"
-                onClick={onSliceAll}
-                loading={sliceAllLoading}
-                disabled={sliceAllLoading}
-              />
-            )}
-          </div>
-        )}
+        <p className="text-sm text-destructive/80 mb-6">{error || 'Došlo k neznámé chybě.'}</p>
+        <ActionButtons />
       </div>
     );
   }
@@ -102,19 +115,7 @@ const PricingCalculator = ({
           Klikni na <strong>Spočítat cenu</strong> pro odeslání modelu na lokální backend.
         </div>
 
-        {typeof onSlice === 'function' && (
-          <div className="mt-6 flex flex-col items-center gap-3">
-            <GenerateButton label="Spočítat cenu" onClick={onSlice} />
-            {showSliceAll && (
-              <GenerateButton
-                label="Spočítat vše"
-                onClick={onSliceAll}
-                loading={sliceAllLoading}
-                disabled={sliceAllLoading}
-              />
-            )}
-          </div>
-        )}
+        <ActionButtons />
       </div>
     );
   }
@@ -129,7 +130,7 @@ const PricingCalculator = ({
     const grams = Number(metrics.filamentGrams) || 0;
     const mm = Number(metrics.filamentMm) || 0;
     const volMm3 = Number(modelInfo.volumeMm3) || 0;
-    const volCm3 = volMm3 ? (volMm3 / 1000) : 0;
+    const volCm3 = volMm3 ? volMm3 / 1000 : 0;
 
     const materialCost = grams * PRICE_PER_GRAM_PLA;
     const printingCost = (t / 3600) * PRICE_PER_HOUR;
@@ -142,19 +143,19 @@ const PricingCalculator = ({
 
         <div className="space-y-3 text-sm">
           <div className="flex justify-between items-center">
-            <span className="text-muted-foreground flex items-center"><Icon name="Clock" className="mr-2" size={14}/>Odhadovaný čas tisku</span>
+            <span className="text-muted-foreground flex items-center"><Icon name="Clock" className="mr-2" size={14} />Odhadovaný čas tisku</span>
             <span className="font-semibold text-foreground tabular-nums">{t ? formatHMS(t) : '-'}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-muted-foreground flex items-center"><Icon name="Database" className="mr-2" size={14}/>Filament</span>
+            <span className="text-muted-foreground flex items-center"><Icon name="Database" className="mr-2" size={14} />Filament</span>
             <span className="font-semibold text-foreground tabular-nums">{grams ? `${grams.toFixed(1)} g` : '-'}{mm ? ` (${Math.round(mm)} mm)` : ''}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-muted-foreground flex items-center"><Icon name="Ruler" className="mr-2" size={14}/>Rozměry (X/Y/Z)</span>
+            <span className="text-muted-foreground flex items-center"><Icon name="Ruler" className="mr-2" size={14} />Rozměry (X/Y/Z)</span>
             <span className="font-semibold text-foreground tabular-nums">{Number.isFinite(sizeMm.x) ? `${fmt(sizeMm.x, 2)} × ${fmt(sizeMm.y, 2)} × ${fmt(sizeMm.z, 2)} mm` : '-'}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-muted-foreground flex items-center"><Icon name="HelpCircle" className="mr-2" size={14}/>Objem</span>
+            <span className="text-muted-foreground flex items-center"><Icon name="HelpCircle" className="mr-2" size={14} />Objem</span>
             <span className="font-semibold text-foreground tabular-nums">{volCm3 ? `${volCm3.toFixed(2)} cm³` : '-'}</span>
           </div>
         </div>
@@ -193,19 +194,7 @@ const PricingCalculator = ({
             </div>
           </div>
 
-          {typeof onSlice === 'function' && (
-            <div className="mt-6 flex flex-col items-center gap-3">
-              <GenerateButton label="Spočítat cenu" onClick={onSlice} />
-              {showSliceAll && (
-                <GenerateButton
-                  label="Spočítat vše"
-                  onClick={onSliceAll}
-                  loading={sliceAllLoading}
-                  disabled={sliceAllLoading}
-                />
-              )}
-            </div>
-          )}
+          <ActionButtons />
         </div>
       </div>
     );
@@ -214,7 +203,7 @@ const PricingCalculator = ({
   // --- Fallback state, should not be reached ---
   return (
     <div className="bg-card border border-border rounded-xl p-8 text-center">
-        <p className="text-sm text-muted-foreground">Nastal neočekávaný stav.</p>
+      <p className="text-sm text-muted-foreground">Nastal neočekávaný stav.</p>
     </div>
   );
 };

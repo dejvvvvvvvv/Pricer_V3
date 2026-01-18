@@ -3,6 +3,10 @@ import styles from './GenerateButton.module.css';
 
 /**
  * Fancy CTA button (Uiverse style) used for "Spočítat cenu".
+ *
+ * size:
+ *  - default: large CTA (hero)
+ *  - compact: smaller variant for tight areas (metrics card)
  */
 const GenerateButton = ({
   label = 'Spočítat cenu',
@@ -10,11 +14,14 @@ const GenerateButton = ({
   disabled = false,
   onClick,
   className = '',
+  size = 'default',
 }) => {
+  const sizeClass = size === 'compact' ? styles.compact : '';
+
   return (
     <button
       type="button"
-      className={`${styles.btn} ${className}`}
+      className={`${styles.btn} ${sizeClass} ${className}`}
       onClick={onClick}
       disabled={disabled || loading}
       aria-busy={loading ? 'true' : 'false'}

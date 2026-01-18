@@ -11,6 +11,18 @@ import GenerateButton from './components/GenerateButton';
 import ErrorBoundary from './components/ErrorBoundary';
 import { sliceModelLocal } from '../../services/slicerApi';
 
+// Default config is used for newly uploaded models (so switching between models does not
+// accidentally reset already-sliced results when a config entry is missing).
+const DEFAULT_PRINT_CONFIG = {
+  material: 'pla',
+  quality: 'standard',
+  infill: 20,
+  quantity: 1,
+  postProcessing: [],
+  expressDelivery: false,
+  supports: false,
+};
+
 const TestKalkulacka = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
@@ -32,12 +44,14 @@ const TestKalkulacka = () => {
     );
   }, []);
 
-  const handleConfigChange = (newConfig) => {
-    if (selectedFile) {
-      setPrintConfigs(prev => ({ ...prev, [selectedFile.id]: newConfig }));
-      updateModelStatus(selectedFile.id, { status: 'pending', result: null, error: null });
-    }
-  };
+  const handleConfigChange = useCallback((newConfig) => {
+    if (selectedFileId === null) return;
+
+    setPrintConfigs(prev => ({ ...prev, [selectedFileId]: newConfig }));
+
+    // Any explicit config change should mark the model as needing a re-slice.
+    updateModelStatus(selectedFileId, { status: 'pending', result: null, error: null });
+  }, [selectedFileId, updateModelStatus]);
 
   const steps = [
     { id: 1, title: 'Nahrání souborů', icon: 'Upload', description: 'Nahrajte 3D modely' },
@@ -56,19 +70,17 @@ const TestKalkulacka = () => {
   }, [uploadedFiles, selectedFileId]);
 
   useEffect(() => {
-    if (selectedFile && !printConfigs[selectedFile.id]) {
-      const defaultConfig = {
-        material: 'pla',
-        quality: 'standard',
-        infill: 20,
-        quantity: 1,
-        postProcessing: [],
-        expressDelivery: false,
-        supports: false,
-      };
-      handleConfigChange(defaultConfig);
-    }
-  }, [selectedFile, printConfigs, handleConfigChange]);
+    // Ensure every model has an entry in printConfigs.
+    // IMPORTANT: Do NOT call handleConfigChange() here, because it resets result/status.
+    // This avoids the bug where batch-sliced models lose their metrics when selected.
+    if (!selectedFile) return;
+    if (printConfigs[selectedFile.id]) return;
+
+    setPrintConfigs(prev => ({
+      ...prev,
+      [selectedFile.id]: { ...DEFAULT_PRINT_CONFIG },
+    }));
+  }, [selectedFile, printConfigs]);
 
   useEffect(() => {
     if (uploadedFiles.length > 0 && currentStep === 1) {
@@ -149,15 +161,16 @@ const TestKalkulacka = () => {
     } finally {
       setSliceAllProcessing(false);
     }
-  }, [uploadedFiles, sliceAllProcessing, printConfigs, updateModelStatus, currentStep]);
+  }, [uploadedFiles, sliceAllProcessing, updateModelStatus, currentStep]);
 
   const handleFilesUploaded = (uploadedItem) => {
     const fileToProcess = uploadedItem.file instanceof File ? uploadedItem.file : uploadedItem;
     if (!(fileToProcess instanceof File)) return;
 
     if (!uploadedFiles.some(file => file.name === fileToProcess.name)) {
+      const newId = Date.now() + Math.random();
       const modelObject = {
-        id: Date.now() + Math.random(),
+        id: newId,
         name: fileToProcess.name,
         size: fileToProcess.size,
         type: fileToProcess.type,
@@ -168,6 +181,13 @@ const TestKalkulacka = () => {
         error: null,
       };
       setUploadedFiles(prev => [...prev, modelObject]);
+
+      // Create default config right away so later selecting this model does NOT
+      // clear its slicing result (important for "Spočítat vse" batch slicing).
+      setPrintConfigs(prev => (prev[newId] ? prev : ({
+        ...prev,
+        [newId]: { ...DEFAULT_PRINT_CONFIG },
+      })));
     }
   };
 
@@ -300,18 +320,6 @@ const TestKalkulacka = () => {
 
               {uploadedFiles.length > 0 && (
                 <>
-                  {/* CTA: Spočítat cenu (Slice) */}
-                  {selectedFile && (
-                    <div className="mt-6 flex justify-center">
-                      <GenerateButton
-                        label="Spočítat cenu"
-                        onClick={handleSliceSelected}
-                        loading={selectedFile.status === 'processing'}
-                        disabled={!selectedFile || selectedFile.status === 'processing'}
-                      />
-                    </div>
-                  )}
-
                   {/* Keep the left configuration visible even on step 3 (after slicing) */}
                   <div className={selectedFile ? 'block' : 'hidden'}>
                     <PrintConfiguration
@@ -327,6 +335,25 @@ const TestKalkulacka = () => {
             </div>
 
             <div className="space-y-6">
+              {/* CTA: Slicing buttons above ModelViewer (hero size) */}
+              {uploadedFiles.length > 0 && selectedFile && (
+                <div className="flex flex-col items-center gap-4">
+                  <GenerateButton
+                    label="Spočítat cenu"
+                    onClick={handleSliceSelected}
+                    loading={selectedFile.status === 'processing'}
+                    disabled={!selectedFile || selectedFile.status === 'processing' || sliceAllProcessing}
+                  />
+                  {uploadedFiles.length > 1 && (
+                    <GenerateButton
+                      label="Spočítat vše"
+                      onClick={handleSliceAll}
+                      loading={sliceAllProcessing}
+                      disabled={sliceAllProcessing}
+                    />
+                  )}
+                </div>
+              )}
               <ErrorBoundary>
                 <ModelViewer selectedFile={selectedFile} onRemove={handleFileDelete} />
               </ErrorBoundary>
