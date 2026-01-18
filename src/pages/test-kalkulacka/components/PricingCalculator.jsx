@@ -28,7 +28,13 @@ const ellipsizePath = (p) => {
   return `${p.slice(0, 18)}…${p.slice(-18)}`;
 };
 
-const PricingCalculator = ({ selectedFile, onSlice }) => {
+const PricingCalculator = ({
+  selectedFile,
+  onSlice,
+  totalModels = 0,
+  onSliceAll,
+  sliceAllLoading = false,
+}) => {
 
   // --- Initial State: No file selected ---
   if (!selectedFile) {
@@ -46,6 +52,8 @@ const PricingCalculator = ({ selectedFile, onSlice }) => {
   }
 
   const { status, result, error } = selectedFile;
+
+  const showSliceAll = typeof onSliceAll === 'function' && Number(totalModels) > 1;
 
   // --- Loading State: Pending or Processing ---
   if (status === 'processing') {
@@ -67,8 +75,16 @@ const PricingCalculator = ({ selectedFile, onSlice }) => {
         <h3 className="text-lg font-semibold text-destructive mb-2">Výpočet se nezdařil</h3>
         <p className="text-sm text-destructive/80 mb-6">{error || "Došlo k neznámé chybě."}</p>
         {typeof onSlice === 'function' && (
-          <div className="flex justify-center">
+          <div className="mt-2 flex flex-col items-center gap-3">
             <GenerateButton label="Spočítat cenu" onClick={onSlice} />
+            {showSliceAll && (
+              <GenerateButton
+                label="Spočítat vše"
+                onClick={onSliceAll}
+                loading={sliceAllLoading}
+                disabled={sliceAllLoading}
+              />
+            )}
           </div>
         )}
       </div>
@@ -87,8 +103,16 @@ const PricingCalculator = ({ selectedFile, onSlice }) => {
         </div>
 
         {typeof onSlice === 'function' && (
-          <div className="mt-6 flex justify-end">
+          <div className="mt-6 flex flex-col items-center gap-3">
             <GenerateButton label="Spočítat cenu" onClick={onSlice} />
+            {showSliceAll && (
+              <GenerateButton
+                label="Spočítat vše"
+                onClick={onSliceAll}
+                loading={sliceAllLoading}
+                disabled={sliceAllLoading}
+              />
+            )}
           </div>
         )}
       </div>
@@ -170,8 +194,16 @@ const PricingCalculator = ({ selectedFile, onSlice }) => {
           </div>
 
           {typeof onSlice === 'function' && (
-            <div className="mt-6 flex justify-end">
+            <div className="mt-6 flex flex-col items-center gap-3">
               <GenerateButton label="Spočítat cenu" onClick={onSlice} />
+              {showSliceAll && (
+                <GenerateButton
+                  label="Spočítat vše"
+                  onClick={onSliceAll}
+                  loading={sliceAllLoading}
+                  disabled={sliceAllLoading}
+                />
+              )}
             </div>
           )}
         </div>

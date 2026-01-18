@@ -8,6 +8,7 @@ import ModelViewer from './components/ModelViewer';
 import PrintConfiguration from './components/PrintConfiguration';
 import PricingCalculator from './components/PricingCalculator';
 import GenerateButton from './components/GenerateButton';
+import ErrorBoundary from './components/ErrorBoundary';
 import { sliceModelLocal } from '../../services/slicerApi';
 
 const TestKalkulacka = () => {
@@ -19,6 +20,7 @@ const TestKalkulacka = () => {
   const [selectedFileId, setSelectedFileId] = useState(null);
   const [printConfigs, setPrintConfigs] = useState({});
   const [isProcessing, setIsProcessing] = useState(false);
+  const [sliceAllProcessing, setSliceAllProcessing] = useState(false);
 
   const selectedFile = selectedFileId
     ? (uploadedFiles.find(f => f.id === selectedFileId) || null)
@@ -106,6 +108,48 @@ const TestKalkulacka = () => {
       });
     }
   }, [selectedFile, printConfigs, updateModelStatus, currentStep]);
+
+  const handleSliceAll = useCallback(async () => {
+    if (uploadedFiles.length === 0) return;
+    if (sliceAllProcessing) return;
+
+    // Work on a snapshot to avoid issues if the user clicks around while batching.
+    const filesSnapshot = [...uploadedFiles];
+
+    setSliceAllProcessing(true);
+    try {
+      if (currentStep < 3) setCurrentStep(3);
+
+      for (const fileItem of filesSnapshot) {
+        // Skip already sliced models (saves time). You can reslice individually.
+        if (fileItem.status === 'completed' && fileItem.result) continue;
+        if (!fileItem.file) continue;
+
+        try {
+          updateModelStatus(fileItem.id, { status: 'processing', error: null });
+          console.log('[test-kalkulacka] Batch slicing (local):', fileItem.name);
+
+          const res = await sliceModelLocal(fileItem.file);
+          const ok = (res?.ok ?? res?.success ?? true);
+          if (!ok) throw new Error(res?.error || res?.message || 'Slicování selhalo');
+
+          updateModelStatus(fileItem.id, {
+            status: 'completed',
+            result: res,
+            error: null,
+          });
+        } catch (err) {
+          console.error('[test-kalkulacka] Batch slice failed:', fileItem.name, err);
+          updateModelStatus(fileItem.id, {
+            status: 'failed',
+            error: String(err?.message || err),
+          });
+        }
+      }
+    } finally {
+      setSliceAllProcessing(false);
+    }
+  }, [uploadedFiles, sliceAllProcessing, printConfigs, updateModelStatus, currentStep]);
 
   const handleFilesUploaded = (uploadedItem) => {
     const fileToProcess = uploadedItem.file instanceof File ? uploadedItem.file : uploadedItem;
@@ -258,7 +302,7 @@ const TestKalkulacka = () => {
                 <>
                   {/* CTA: Spočítat cenu (Slice) */}
                   {selectedFile && (
-                    <div className="flex justify-end">
+                    <div className="mt-6 flex justify-center">
                       <GenerateButton
                         label="Spočítat cenu"
                         onClick={handleSliceSelected}
@@ -268,7 +312,8 @@ const TestKalkulacka = () => {
                     </div>
                   )}
 
-                  <div className={currentStep === 1 || (currentStep === 2 && selectedFile) ? 'block' : 'hidden'}>
+                  {/* Keep the left configuration visible even on step 3 (after slicing) */}
+                  <div className={selectedFile ? 'block' : 'hidden'}>
                     <PrintConfiguration
                       key={selectedFile ? selectedFile.id : 'empty'}
                       selectedFile={selectedFile}
@@ -282,12 +327,17 @@ const TestKalkulacka = () => {
             </div>
 
             <div className="space-y-6">
-              <ModelViewer selectedFile={selectedFile} onRemove={handleFileDelete} />
+              <ErrorBoundary>
+                <ModelViewer selectedFile={selectedFile} onRemove={handleFileDelete} />
+              </ErrorBoundary>
               {/* Metrics + price card (right column) */}
               {uploadedFiles.length > 0 && (
                 <PricingCalculator
                   selectedFile={selectedFile}
                   onSlice={handleSliceSelected}
+                  totalModels={uploadedFiles.length}
+                  onSliceAll={handleSliceAll}
+                  sliceAllLoading={sliceAllProcessing}
                 />
               )}
               {uploadedFiles.length > 0 && (
