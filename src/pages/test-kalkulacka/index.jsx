@@ -33,6 +33,7 @@ const TestKalkulacka = () => {
   const [printConfigs, setPrintConfigs] = useState({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [sliceAllProcessing, setSliceAllProcessing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ mode: null, done: 0, total: 0 });
 
   const selectedFile = selectedFileId
     ? (uploadedFiles.find(f => f.id === selectedFileId) || null)
@@ -121,21 +122,22 @@ const TestKalkulacka = () => {
     }
   }, [selectedFile, printConfigs, updateModelStatus, currentStep]);
 
-  const handleSliceAll = useCallback(async () => {
-    if (uploadedFiles.length === 0) return;
-    if (sliceAllProcessing) return;
-
-    // Work on a snapshot to avoid issues if the user clicks around while batching.
-    const filesSnapshot = [...uploadedFiles];
+  const runBatchSlice = useCallback(async (targets, mode) => {
+    if (!Array.isArray(targets) || targets.length === 0) return;
 
     setSliceAllProcessing(true);
+    setBatchProgress({ mode, done: 0, total: targets.length });
+
     try {
       if (currentStep < 3) setCurrentStep(3);
 
-      for (const fileItem of filesSnapshot) {
-        // Skip already sliced models (saves time). You can reslice individually.
-        if (fileItem.status === 'completed' && fileItem.result) continue;
-        if (!fileItem.file) continue;
+      let done = 0;
+      for (const fileItem of targets) {
+        if (!fileItem?.file) {
+          done += 1;
+          setBatchProgress(prev => ({ ...prev, done }));
+          continue;
+        }
 
         try {
           updateModelStatus(fileItem.id, { status: 'processing', error: null });
@@ -156,12 +158,40 @@ const TestKalkulacka = () => {
             status: 'failed',
             error: String(err?.message || err),
           });
+        } finally {
+          done += 1;
+          setBatchProgress(prev => ({ ...prev, done }));
         }
       }
     } finally {
       setSliceAllProcessing(false);
     }
-  }, [uploadedFiles, sliceAllProcessing, updateModelStatus, currentStep]);
+  }, [currentStep, updateModelStatus]);
+
+  const handleSliceAll = useCallback(async () => {
+    if (uploadedFiles.length === 0) return;
+    if (sliceAllProcessing) return;
+
+    // Work on a snapshot to avoid issues if the user clicks around while batching.
+    const filesSnapshot = [...uploadedFiles];
+
+    // Slice only models that are not already completed (saves time).
+    const targets = filesSnapshot.filter(f => f?.file && !(f.status === 'completed' && f.result));
+    if (targets.length === 0) return;
+
+    await runBatchSlice(targets, 'all');
+  }, [uploadedFiles, sliceAllProcessing, runBatchSlice]);
+
+  const handleResliceFailed = useCallback(async () => {
+    if (uploadedFiles.length === 0) return;
+    if (sliceAllProcessing) return;
+
+    const filesSnapshot = [...uploadedFiles];
+    const targets = filesSnapshot.filter(f => f?.file && f.status === 'failed');
+    if (targets.length === 0) return;
+
+    await runBatchSlice(targets, 'failed');
+  }, [uploadedFiles, sliceAllProcessing, runBatchSlice]);
 
   const handleFilesUploaded = (uploadedItem) => {
     const fileToProcess = uploadedItem.file instanceof File ? uploadedItem.file : uploadedItem;
@@ -248,6 +278,9 @@ const TestKalkulacka = () => {
     failed: 'Výpočet se nezdařil'
   };
 
+  const hasFailedModels = uploadedFiles.some(f => f.status === 'failed');
+  const hasMultipleModels = uploadedFiles.length > 1;
+
   return (
     <div className="min-h-screen bg-background">
       <input
@@ -279,36 +312,78 @@ const TestKalkulacka = () => {
           </div>
 
           <div className="mb-8">
-            <div className="flex items-center justify-between max-w-2xl">
-              {steps.map((step, index) => (
-                <div key={step.id} className="flex items-center">
-                  <div className="flex flex-col items-center">
-                    <div
-                      className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-colors ${currentStep >= step.id
-                        ? 'bg-primary border-primary text-primary-foreground'
-                        : 'border-border text-muted-foreground'
-                        }`}
-                    >
-                      <Icon name={step.icon} size={20} />
-                    </div>
-                    <div className="mt-2 text-center">
-                      <p
-                        className={`text-sm font-medium ${currentStep >= step.id ? 'text-foreground' : 'text-muted-foreground'
+            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+              <div className="flex items-center justify-between max-w-2xl w-full">
+                {steps.map((step, index) => (
+                  <div key={step.id} className="flex items-center">
+                    <div className="flex flex-col items-center">
+                      <div
+                        className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-colors ${currentStep >= step.id
+                          ? 'bg-primary border-primary text-primary-foreground'
+                          : 'border-border text-muted-foreground'
                           }`}
                       >
-                        {step.title}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{step.description}</p>
+                        <Icon name={step.icon} size={20} />
+                      </div>
+                      <div className="mt-2 text-center">
+                        <p
+                          className={`text-sm font-medium ${currentStep >= step.id ? 'text-foreground' : 'text-muted-foreground'
+                            }`}
+                        >
+                          {step.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{step.description}</p>
+                      </div>
                     </div>
+                    {index < steps.length - 1 && (
+                      <div
+                        className={`w-24 h-0.5 mx-4 transition-colors ${currentStep > step.id ? 'bg-primary' : 'bg-border'
+                          }`}
+                      />
+                    )}
                   </div>
-                  {index < steps.length - 1 && (
-                    <div
-                      className={`w-24 h-0.5 mx-4 transition-colors ${currentStep > step.id ? 'bg-primary' : 'bg-border'
-                        }`}
+                ))}
+              </div>
+
+              {uploadedFiles.length > 0 && selectedFile && (
+                <div className="flex flex-col items-center lg:items-end gap-2">
+                  <div className="flex flex-wrap items-center justify-center lg:justify-end gap-3">
+                    <GenerateButton
+                      size="top"
+                      label="Spočítat cenu"
+                      onClick={handleSliceSelected}
+                      loading={selectedFile.status === 'processing'}
+                      disabled={!selectedFile || selectedFile.status === 'processing' || sliceAllProcessing}
                     />
+
+                    {uploadedFiles.length > 1 && (
+                      <GenerateButton
+                        size="top"
+                        label="Spočítat vše"
+                        onClick={handleSliceAll}
+                        loading={sliceAllProcessing && batchProgress.mode === 'all'}
+                        disabled={sliceAllProcessing || uploadedFiles.some(f => f.status === 'processing')}
+                      />
+                    )}
+
+                    {hasFailedModels && (
+                      <GenerateButton
+                        size="top"
+                        label="Reslice jen failed"
+                        onClick={handleResliceFailed}
+                        loading={sliceAllProcessing && batchProgress.mode === 'failed'}
+                        disabled={sliceAllProcessing || uploadedFiles.some(f => f.status === 'processing')}
+                      />
+                    )}
+                  </div>
+
+                  {sliceAllProcessing && batchProgress.total > 0 && (
+                    <div className="text-xs text-muted-foreground text-center lg:text-right">
+                      {batchProgress.mode === 'failed' ? 'Reslice failed' : 'Spočítat vše'} – hotovo {batchProgress.done}/{batchProgress.total}
+                    </div>
                   )}
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
@@ -335,25 +410,6 @@ const TestKalkulacka = () => {
             </div>
 
             <div className="space-y-6">
-              {/* CTA: Slicing buttons above ModelViewer (hero size) */}
-              {uploadedFiles.length > 0 && selectedFile && (
-                <div className="flex flex-col items-center gap-4">
-                  <GenerateButton
-                    label="Spočítat cenu"
-                    onClick={handleSliceSelected}
-                    loading={selectedFile.status === 'processing'}
-                    disabled={!selectedFile || selectedFile.status === 'processing' || sliceAllProcessing}
-                  />
-                  {uploadedFiles.length > 1 && (
-                    <GenerateButton
-                      label="Spočítat vše"
-                      onClick={handleSliceAll}
-                      loading={sliceAllProcessing}
-                      disabled={sliceAllProcessing}
-                    />
-                  )}
-                </div>
-              )}
               <ErrorBoundary>
                 <ModelViewer selectedFile={selectedFile} onRemove={handleFileDelete} />
               </ErrorBoundary>

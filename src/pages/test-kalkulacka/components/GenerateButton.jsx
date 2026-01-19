@@ -1,12 +1,19 @@
 import React from 'react';
 import styles from './GenerateButton.module.css';
 
+const ICON_SIZES = {
+  default: 24,
+  top: 20,
+  compact: 18,
+};
+
 /**
- * Fancy CTA button (Uiverse style) used for "Spočítat cenu".
+ * Fancy CTA button (Uiverse style) used for slicing actions.
  *
  * size:
- *  - default: large CTA (hero)
- *  - compact: smaller variant for tight areas (metrics card)
+ *  - default: hero button
+ *  - top: ~20% smaller (header controls)
+ *  - compact: ~35% smaller (metrics card)
  */
 const GenerateButton = ({
   label = 'Spočítat cenu',
@@ -15,8 +22,13 @@ const GenerateButton = ({
   onClick,
   className = '',
   size = 'default',
+  ...rest
 }) => {
-  const sizeClass = size === 'compact' ? styles.compact : '';
+  const iconSize = ICON_SIZES[size] || ICON_SIZES.default;
+  const sizeClass =
+    size === 'top' ? styles.sizeTop :
+    size === 'compact' ? styles.sizeCompact :
+    '';
 
   return (
     <button
@@ -25,10 +37,11 @@ const GenerateButton = ({
       onClick={onClick}
       disabled={disabled || loading}
       aria-busy={loading ? 'true' : 'false'}
+      {...rest}
     >
       <svg
-        height={24}
-        width={24}
+        height={iconSize}
+        width={iconSize}
         viewBox="0 0 24 24"
         data-name="Layer 1"
         id="Layer_1"
