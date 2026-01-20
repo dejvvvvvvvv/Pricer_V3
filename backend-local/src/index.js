@@ -15,6 +15,16 @@ import { parseGcodeMetrics } from "./slicer/parseGcode.js";
 import { runPrusaInfo } from "./slicer/runPrusaInfo.js";
 import { parseModelInfo } from "./slicer/parseModelInfo.js";
 
+import {
+  createPresetFromIni,
+  deletePreset,
+  getIniPathForPreset,
+  listPresets,
+  readPresetsState,
+  setDefaultPreset,
+  updatePresetMeta
+} from "./presetsStore.js";
+
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -29,6 +39,9 @@ const WORKSPACE_ROOT = process.env.SLICER_WORKSPACE_ROOT || (isWin ? "C:\\modelp
 const DEFAULT_INI = process.env.PRUSA_DEFAULT_INI || "";
 
 const app = express();
+
+// JSON for PATCH endpoints etc.
+app.use(express.json({ limit: "2mb" }));
 
 // CORS for local dev
 const corsOriginsRaw = (process.env.CORS_ORIGINS || "").trim();
@@ -58,6 +71,118 @@ app.get("/api/health", async (_req, res) => {
     backendRoot,
     time: new Date().toISOString()
   });
+});
+
+// ===== Presets API (backend-local) =====
+
+function getTenantIdFromReq(req) {
+  const fromHeader = String(req.headers["x-tenant-id"] || "").trim();
+  return fromHeader || "demo-tenant";
+}
+
+function ok(res, data) {
+  return res.json({ ok: true, data });
+}
+
+function fail(res, status, errorCode, message, details) {
+  return res.status(status).json({ ok: false, errorCode, message, details });
+}
+
+const presetUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const name = String(file.originalname || "").toLowerCase();
+    if (!name.endsWith(".ini")) return cb(new Error("Only .ini files are allowed"));
+    cb(null, true);
+  }
+}).single("file");
+
+app.get("/api/presets", async (req, res) => {
+  try {
+    const tenantId = getTenantIdFromReq(req);
+    const state = await listPresets(WORKSPACE_ROOT, tenantId);
+    return ok(res, state);
+  } catch (e) {
+    return fail(res, 500, "MP_PRESETS_LIST_FAILED", String(e?.message || e));
+  }
+});
+
+app.post("/api/presets", presetUpload, async (req, res) => {
+  try {
+    const tenantId = getTenantIdFromReq(req);
+    if (!req.file?.buffer) {
+      return fail(res, 400, "MP_BAD_REQUEST", "Missing multipart field 'file' (.ini)");
+    }
+
+    const meta = {
+      name: req.body?.name,
+      order: req.body?.order,
+      visibleInWidget: req.body?.visibleInWidget
+    };
+
+    const created = await createPresetFromIni(WORKSPACE_ROOT, tenantId, req.file.buffer, meta);
+    return ok(res, created.state);
+  } catch (e) {
+    return fail(res, 500, "MP_PRESET_UPLOAD_FAILED", String(e?.message || e));
+  }
+});
+
+app.patch("/api/presets/:id", async (req, res) => {
+  try {
+    const tenantId = getTenantIdFromReq(req);
+    const presetId = String(req.params.id || "").trim();
+    if (!presetId) return fail(res, 400, "MP_BAD_REQUEST", "Missing preset id");
+
+    const out = await updatePresetMeta(WORKSPACE_ROOT, tenantId, presetId, req.body || {});
+    if (!out.ok) return fail(res, 404, "MP_NOT_FOUND", out.error || "Preset not found");
+    return ok(res, out.state);
+  } catch (e) {
+    return fail(res, 500, "MP_PRESET_PATCH_FAILED", String(e?.message || e));
+  }
+});
+
+app.post("/api/presets/:id/default", async (req, res) => {
+  try {
+    const tenantId = getTenantIdFromReq(req);
+    const presetId = String(req.params.id || "").trim();
+    if (!presetId) return fail(res, 400, "MP_BAD_REQUEST", "Missing preset id");
+
+    const out = await setDefaultPreset(WORKSPACE_ROOT, tenantId, presetId);
+    if (!out.ok) return fail(res, 404, "MP_NOT_FOUND", out.error || "Preset not found");
+    return ok(res, out.state);
+  } catch (e) {
+    return fail(res, 500, "MP_PRESET_DEFAULT_FAILED", String(e?.message || e));
+  }
+});
+
+app.delete("/api/presets/:id", async (req, res) => {
+  try {
+    const tenantId = getTenantIdFromReq(req);
+    const presetId = String(req.params.id || "").trim();
+    if (!presetId) return fail(res, 400, "MP_BAD_REQUEST", "Missing preset id");
+
+    const out = await deletePreset(WORKSPACE_ROOT, tenantId, presetId);
+    if (!out.ok) return fail(res, 500, "MP_PRESET_DELETE_FAILED", out.error || "Delete failed");
+    if (!out.removed) return fail(res, 404, "MP_NOT_FOUND", "Preset not found");
+    return ok(res, out.state);
+  } catch (e) {
+    return fail(res, 500, "MP_PRESET_DELETE_FAILED", String(e?.message || e));
+  }
+});
+
+app.get("/api/widget/presets", async (req, res) => {
+  try {
+    const tenantId = getTenantIdFromReq(req);
+    const state = await listPresets(WORKSPACE_ROOT, tenantId);
+    const presets = (state.presets || [])
+      .filter((p) => !!p.visibleInWidget)
+      .sort((a, b) => (b.order ?? 0) - (a.order ?? 0));
+
+    return res.json({ presets, defaultPresetId: state.defaultPresetId || null });
+  } catch (e) {
+    return res.status(500).json({ presets: [], defaultPresetId: null, error: String(e?.message || e) });
+  }
 });
 
 app.get("/api/health/prusa", async (_req, res) => {
@@ -123,12 +248,42 @@ app.post(
       }
 
       const iniFile = req.files?.ini?.[0];
-      const iniPath = iniFile?.path || DEFAULT_INI;
+
+      const tenantId = getTenantIdFromReq(req);
+      const presetId = typeof req.body?.presetId === "string" ? req.body.presetId.trim() : "";
+
+      let iniPath = iniFile?.path || "";
+      let usedPreset = null;
+
+      // 1) explicit presetId
+      if (!iniPath && presetId) {
+        const fromPreset = await getIniPathForPreset(WORKSPACE_ROOT, tenantId, presetId);
+        if (fromPreset) {
+          iniPath = fromPreset;
+          usedPreset = presetId;
+        }
+      }
+
+      // 2) tenant default preset
+      if (!iniPath) {
+        const state = await readPresetsState(WORKSPACE_ROOT, tenantId);
+        if (state.defaultPresetId) {
+          const fromDefault = await getIniPathForPreset(WORKSPACE_ROOT, tenantId, state.defaultPresetId);
+          if (fromDefault) {
+            iniPath = fromDefault;
+            usedPreset = state.defaultPresetId;
+          }
+        }
+      }
+
+      // 3) env default ini
+      if (!iniPath) iniPath = DEFAULT_INI;
+
       if (!iniPath) {
         return res.status(400).json({
           success: false,
           error: "No .ini profile provided.",
-          hint: "Upload an 'ini' file OR set PRUSA_DEFAULT_INI in backend-local/.env (export from PrusaSlicer GUI)."
+          hint: "Upload an 'ini' file OR create presets via /api/presets OR set PRUSA_DEFAULT_INI in backend-local/.env"
         });
       }
       if (!(await fileExists(iniPath))) {
@@ -211,6 +366,7 @@ app.post(
         durationMs: run.durationMs,
         slicerCmd,
         iniUsed: iniPath,
+        usedPreset,
         modelUsed: modelFile.originalname,
         modelInfo,
         modelInfoError: modelInfoError || undefined,
