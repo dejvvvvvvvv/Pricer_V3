@@ -10,6 +10,7 @@ import PricingCalculator from './components/PricingCalculator';
 import GenerateButton from './components/GenerateButton';
 import ErrorBoundary from './components/ErrorBoundary';
 import { sliceModelLocal } from '../../services/slicerApi';
+import { fetchWidgetPresets } from '../../services/presetsApi';
 
 // Default config is used for newly uploaded models (so switching between models does not
 // accidentally reset already-sliced results when a config entry is missing).
@@ -33,7 +34,13 @@ const TestKalkulacka = () => {
   const [printConfigs, setPrintConfigs] = useState({});
   const [isProcessing, setIsProcessing] = useState(false);
   const [sliceAllProcessing, setSliceAllProcessing] = useState(false);
-  const [batchProgress, setBatchProgress] = useState({ mode: null, done: 0, total: 0 });
+
+  // Widget slicing presets (loaded from backend)
+  const [availablePresets, setAvailablePresets] = useState([]);
+  const [defaultPresetId, setDefaultPresetId] = useState(null);
+  const [selectedPresetId, setSelectedPresetId] = useState(null);
+  const [presetsLoading, setPresetsLoading] = useState(false);
+  const [presetsError, setPresetsError] = useState(null);
 
   const selectedFile = selectedFileId
     ? (uploadedFiles.find(f => f.id === selectedFileId) || null)
@@ -70,6 +77,51 @@ const TestKalkulacka = () => {
     if (!exists) setSelectedFileId(uploadedFiles[0].id);
   }, [uploadedFiles, selectedFileId]);
 
+  // Load widget presets once on calculator mount.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPresets = async () => {
+      setPresetsLoading(true);
+      setPresetsError(null);
+      try {
+        const res = await fetchWidgetPresets();
+        if (cancelled) return;
+
+        if (!res?.ok) {
+          throw new Error(res?.message || 'Failed to load presets');
+        }
+
+        const payload = res.data || {};
+        const presets = Array.isArray(payload?.presets) ? payload.presets : [];
+        const defId = typeof payload?.defaultPresetId === 'string' && payload.defaultPresetId ? payload.defaultPresetId : null;
+
+        setAvailablePresets(presets);
+        setDefaultPresetId(defId);
+
+        // Preselect default preset if present; otherwise pick the first available preset.
+        const preselected = (defId && presets.some(p => p?.id === defId))
+          ? defId
+          : (presets?.[0]?.id || null);
+
+        setSelectedPresetId(preselected);
+      } catch (e) {
+        if (cancelled) return;
+        setAvailablePresets([]);
+        setDefaultPresetId(null);
+        setSelectedPresetId(null);
+        setPresetsError(e || new Error('Failed to load presets'));
+      } finally {
+        if (!cancelled) setPresetsLoading(false);
+      }
+    };
+
+    loadPresets();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     // Ensure every model has an entry in printConfigs.
     // IMPORTANT: Do NOT call handleConfigChange() here, because it resets result/status.
@@ -101,9 +153,28 @@ const TestKalkulacka = () => {
 
       console.log('[test-kalkulacka] Slicing (local) file:', selectedFile.name, 'config:', cfg);
 
-      const res = await sliceModelLocal(selectedFile.file);
+      const trySliceWithFallback = async (presetId) => {
+        try {
+          return await sliceModelLocal(selectedFile.file, { presetId });
+        } catch (e) {
+          // Fallback: if preset-based slicing fails, drop presetId and retry once.
+          if (presetId) {
+            console.warn('[test-kalkulacka] Slice failed with presetId, retrying without presetId:', presetId, e);
+            setSelectedPresetId(null);
+            return await sliceModelLocal(selectedFile.file, { presetId: null });
+          }
+          throw e;
+        }
+      };
+
+      const res = await trySliceWithFallback(selectedPresetId);
       const ok = (res?.ok ?? res?.success ?? true);
       if (!ok) throw new Error(res?.error || res?.message || 'Slicování selhalo');
+
+      if (import.meta?.env?.DEV) {
+        if (res?.usedPreset) console.debug('[test-kalkulacka] usedPreset:', res.usedPreset);
+        if (res?.warnings) console.debug('[test-kalkulacka] warnings:', res.warnings);
+      }
 
       updateModelStatus(selectedFile.id, {
         status: 'completed',
@@ -120,32 +191,53 @@ const TestKalkulacka = () => {
         error: String(err?.message || err),
       });
     }
-  }, [selectedFile, printConfigs, updateModelStatus, currentStep]);
+  }, [selectedFile, printConfigs, updateModelStatus, currentStep, selectedPresetId]);
 
-  const runBatchSlice = useCallback(async (targets, mode) => {
-    if (!Array.isArray(targets) || targets.length === 0) return;
+  const handleSliceAll = useCallback(async () => {
+    if (uploadedFiles.length === 0) return;
+    if (sliceAllProcessing) return;
+
+    // Work on a snapshot to avoid issues if the user clicks around while batching.
+    const filesSnapshot = [...uploadedFiles];
+
+    // Use a mutable local so we can downgrade to no-preset mid-batch if backend rejects a preset.
+    let effectivePresetId = selectedPresetId;
 
     setSliceAllProcessing(true);
-    setBatchProgress({ mode, done: 0, total: targets.length });
-
     try {
       if (currentStep < 3) setCurrentStep(3);
 
-      let done = 0;
-      for (const fileItem of targets) {
-        if (!fileItem?.file) {
-          done += 1;
-          setBatchProgress(prev => ({ ...prev, done }));
-          continue;
-        }
+      for (const fileItem of filesSnapshot) {
+        // Skip already sliced models (saves time). You can reslice individually.
+        if (fileItem.status === 'completed' && fileItem.result) continue;
+        if (!fileItem.file) continue;
 
         try {
           updateModelStatus(fileItem.id, { status: 'processing', error: null });
           console.log('[test-kalkulacka] Batch slicing (local):', fileItem.name);
 
-          const res = await sliceModelLocal(fileItem.file);
+          const trySliceWithFallback = async (presetId) => {
+            try {
+              return await sliceModelLocal(fileItem.file, { presetId });
+            } catch (e) {
+              if (presetId) {
+                console.warn('[test-kalkulacka] Batch slice failed with presetId, retrying without presetId:', presetId, e);
+                effectivePresetId = null;
+                setSelectedPresetId(null);
+                return await sliceModelLocal(fileItem.file, { presetId: null });
+              }
+              throw e;
+            }
+          };
+
+          const res = await trySliceWithFallback(effectivePresetId);
           const ok = (res?.ok ?? res?.success ?? true);
           if (!ok) throw new Error(res?.error || res?.message || 'Slicování selhalo');
+
+          if (import.meta?.env?.DEV) {
+            if (res?.usedPreset) console.debug('[test-kalkulacka] usedPreset:', res.usedPreset);
+            if (res?.warnings) console.debug('[test-kalkulacka] warnings:', res.warnings);
+          }
 
           updateModelStatus(fileItem.id, {
             status: 'completed',
@@ -158,40 +250,12 @@ const TestKalkulacka = () => {
             status: 'failed',
             error: String(err?.message || err),
           });
-        } finally {
-          done += 1;
-          setBatchProgress(prev => ({ ...prev, done }));
         }
       }
     } finally {
       setSliceAllProcessing(false);
     }
-  }, [currentStep, updateModelStatus]);
-
-  const handleSliceAll = useCallback(async () => {
-    if (uploadedFiles.length === 0) return;
-    if (sliceAllProcessing) return;
-
-    // Work on a snapshot to avoid issues if the user clicks around while batching.
-    const filesSnapshot = [...uploadedFiles];
-
-    // Slice only models that are not already completed (saves time).
-    const targets = filesSnapshot.filter(f => f?.file && !(f.status === 'completed' && f.result));
-    if (targets.length === 0) return;
-
-    await runBatchSlice(targets, 'all');
-  }, [uploadedFiles, sliceAllProcessing, runBatchSlice]);
-
-  const handleResliceFailed = useCallback(async () => {
-    if (uploadedFiles.length === 0) return;
-    if (sliceAllProcessing) return;
-
-    const filesSnapshot = [...uploadedFiles];
-    const targets = filesSnapshot.filter(f => f?.file && f.status === 'failed');
-    if (targets.length === 0) return;
-
-    await runBatchSlice(targets, 'failed');
-  }, [uploadedFiles, sliceAllProcessing, runBatchSlice]);
+  }, [uploadedFiles, sliceAllProcessing, updateModelStatus, currentStep, selectedPresetId]);
 
   const handleFilesUploaded = (uploadedItem) => {
     const fileToProcess = uploadedItem.file instanceof File ? uploadedItem.file : uploadedItem;
@@ -278,9 +342,6 @@ const TestKalkulacka = () => {
     failed: 'Výpočet se nezdařil'
   };
 
-  const hasFailedModels = uploadedFiles.some(f => f.status === 'failed');
-  const hasMultipleModels = uploadedFiles.length > 1;
-
   return (
     <div className="min-h-screen bg-background">
       <input
@@ -312,78 +373,36 @@ const TestKalkulacka = () => {
           </div>
 
           <div className="mb-8">
-            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
-              <div className="flex items-center justify-between max-w-2xl w-full">
-                {steps.map((step, index) => (
-                  <div key={step.id} className="flex items-center">
-                    <div className="flex flex-col items-center">
-                      <div
-                        className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-colors ${currentStep >= step.id
-                          ? 'bg-primary border-primary text-primary-foreground'
-                          : 'border-border text-muted-foreground'
+            <div className="flex items-center justify-between max-w-2xl">
+              {steps.map((step, index) => (
+                <div key={step.id} className="flex items-center">
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-colors ${currentStep >= step.id
+                        ? 'bg-primary border-primary text-primary-foreground'
+                        : 'border-border text-muted-foreground'
+                        }`}
+                    >
+                      <Icon name={step.icon} size={20} />
+                    </div>
+                    <div className="mt-2 text-center">
+                      <p
+                        className={`text-sm font-medium ${currentStep >= step.id ? 'text-foreground' : 'text-muted-foreground'
                           }`}
                       >
-                        <Icon name={step.icon} size={20} />
-                      </div>
-                      <div className="mt-2 text-center">
-                        <p
-                          className={`text-sm font-medium ${currentStep >= step.id ? 'text-foreground' : 'text-muted-foreground'
-                            }`}
-                        >
-                          {step.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{step.description}</p>
-                      </div>
+                        {step.title}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{step.description}</p>
                     </div>
-                    {index < steps.length - 1 && (
-                      <div
-                        className={`w-24 h-0.5 mx-4 transition-colors ${currentStep > step.id ? 'bg-primary' : 'bg-border'
-                          }`}
-                      />
-                    )}
                   </div>
-                ))}
-              </div>
-
-              {uploadedFiles.length > 0 && selectedFile && (
-                <div className="flex flex-col items-center lg:items-end gap-2">
-                  <div className="flex flex-wrap items-center justify-center lg:justify-end gap-3">
-                    <GenerateButton
-                      size="top"
-                      label="Spočítat cenu"
-                      onClick={handleSliceSelected}
-                      loading={selectedFile.status === 'processing'}
-                      disabled={!selectedFile || selectedFile.status === 'processing' || sliceAllProcessing}
+                  {index < steps.length - 1 && (
+                    <div
+                      className={`w-24 h-0.5 mx-4 transition-colors ${currentStep > step.id ? 'bg-primary' : 'bg-border'
+                        }`}
                     />
-
-                    {uploadedFiles.length > 1 && (
-                      <GenerateButton
-                        size="top"
-                        label="Spočítat vše"
-                        onClick={handleSliceAll}
-                        loading={sliceAllProcessing && batchProgress.mode === 'all'}
-                        disabled={sliceAllProcessing || uploadedFiles.some(f => f.status === 'processing')}
-                      />
-                    )}
-
-                    {hasFailedModels && (
-                      <GenerateButton
-                        size="top"
-                        label="Reslice jen failed"
-                        onClick={handleResliceFailed}
-                        loading={sliceAllProcessing && batchProgress.mode === 'failed'}
-                        disabled={sliceAllProcessing || uploadedFiles.some(f => f.status === 'processing')}
-                      />
-                    )}
-                  </div>
-
-                  {sliceAllProcessing && batchProgress.total > 0 && (
-                    <div className="text-xs text-muted-foreground text-center lg:text-right">
-                      {batchProgress.mode === 'failed' ? 'Reslice failed' : 'Spočítat vše'} – hotovo {batchProgress.done}/{batchProgress.total}
-                    </div>
                   )}
                 </div>
-              )}
+              ))}
             </div>
           </div>
 
@@ -402,6 +421,12 @@ const TestKalkulacka = () => {
                       selectedFile={selectedFile}
                       onConfigChange={handleConfigChange}
                       initialConfig={currentConfig}
+                      availablePresets={availablePresets}
+                      defaultPresetId={defaultPresetId}
+                      selectedPresetId={selectedPresetId}
+                      onPresetChange={setSelectedPresetId}
+                      presetsLoading={presetsLoading}
+                      presetsError={presetsError}
                       disabled={uploadedFiles.some(f => f.status === 'processing')}
                     />
                   </div>
@@ -410,6 +435,25 @@ const TestKalkulacka = () => {
             </div>
 
             <div className="space-y-6">
+              {/* CTA: Slicing buttons above ModelViewer (hero size) */}
+              {uploadedFiles.length > 0 && selectedFile && (
+                <div className="flex flex-col items-center gap-4">
+                  <GenerateButton
+                    label="Spočítat cenu"
+                    onClick={handleSliceSelected}
+                    loading={selectedFile.status === 'processing'}
+                    disabled={!selectedFile || selectedFile.status === 'processing' || sliceAllProcessing}
+                  />
+                  {uploadedFiles.length > 1 && (
+                    <GenerateButton
+                      label="Spočítat vše"
+                      onClick={handleSliceAll}
+                      loading={sliceAllProcessing}
+                      disabled={sliceAllProcessing}
+                    />
+                  )}
+                </div>
+              )}
               <ErrorBoundary>
                 <ModelViewer selectedFile={selectedFile} onRemove={handleFileDelete} />
               </ErrorBoundary>

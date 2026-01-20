@@ -4,8 +4,32 @@ import Icon from '../../../components/AppIcon';
 import Input from '../../../components/ui/Input';
 import Select from '../../../components/ui/Select';
 import { Checkbox } from '../../../components/ui/Checkbox';
+import { useLanguage } from '../../../contexts/LanguageContext';
 
-const PrintConfiguration = ({ onConfigChange, selectedFile, initialConfig }) => {
+const PrintConfiguration = ({
+  onConfigChange,
+  selectedFile,
+  initialConfig,
+  // Widget slicing presets
+  availablePresets = [],
+  defaultPresetId = null,
+  selectedPresetId = null,
+  onPresetChange,
+  presetsLoading = false,
+  presetsError = null,
+}) => {
+  const { language } = useLanguage();
+
+  const presetUi = {
+    label: language === 'en' ? 'Slicing preset' : 'Preset pro slicování',
+    noPresets: language === 'en'
+      ? 'No presets available — using default profile (Admin/parameters).'
+      : 'Žádné presety nejsou k dispozici — používám default profil (Admin/parameters).',
+    failed: language === 'en'
+      ? 'Failed to load presets — using default profile.'
+      : 'Presety se nepodařilo načíst — používám default profil.',
+    placeholder: language === 'en' ? 'Select preset…' : 'Vyber preset…',
+  };
   const [config, setConfig] = useState(initialConfig || {
     material: 'pla',
     quality: 'standard',
@@ -129,6 +153,53 @@ const PrintConfiguration = ({ onConfigChange, selectedFile, initialConfig }) => 
 
   return (
     <div className="space-y-6">
+      {/* Slicing preset selector (loaded from backend) */}
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center">
+          <Icon name="Sliders" size={20} className="mr-2" />
+          {presetUi.label}
+        </h3>
+
+        {/* Error / no presets banners */}
+        {presetsError && (
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {presetUi.failed}
+          </div>
+        )}
+
+        {!presetsError && !presetsLoading && (availablePresets?.length || 0) === 0 && (
+          <div className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+            {presetUi.noPresets}
+          </div>
+        )}
+
+        {(availablePresets?.length || 0) > 0 && (
+          <Select
+            label={presetUi.label}
+            options={(availablePresets || []).map((p) => ({ value: p.id, label: p.name }))}
+            value={selectedPresetId || ''}
+            onChange={(value) => onPresetChange?.(value || null)}
+            searchable
+            loading={presetsLoading}
+            disabled={presetsLoading}
+            placeholder={presetUi.placeholder}
+          />
+        )}
+
+        {/* Show loading state even when presets list is not yet available */}
+        {presetsLoading && (availablePresets?.length || 0) === 0 && (
+          <Select
+            label={presetUi.label}
+            options={[]}
+            value=""
+            onChange={() => { }}
+            loading
+            disabled
+            placeholder={presetUi.placeholder}
+          />
+        )}
+      </div>
+
       {/* Quality Presets */}
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center">

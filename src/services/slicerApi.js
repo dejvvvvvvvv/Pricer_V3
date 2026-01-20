@@ -2,6 +2,8 @@
 // Local API client for backend-local (Express + PrusaSlicer CLI).
 // Uses Vite proxy: /api -> http://127.0.0.1:3001
 
+import { getTenantId } from '../utils/adminTenantStorage';
+
 /**
  * @typedef {{
  *  jobId?: string,
@@ -37,7 +39,7 @@ function tryJson(text) {
  * Field name: "model"
  *
  * @param {File} modelFile
- * @param {{ timeoutMs?: number }} [opts]
+ * @param {{ timeoutMs?: number, presetId?: string | null, tenantId?: string }} [opts]
  * @returns {Promise<SliceResponse>}
  */
 export async function sliceModelLocal(modelFile, opts = {}) {
@@ -53,9 +55,22 @@ export async function sliceModelLocal(modelFile, opts = {}) {
     const formData = new FormData();
     formData.append('model', modelFile);
 
+    const presetId = typeof opts.presetId === 'string' && opts.presetId.trim() ? opts.presetId.trim() : null;
+    if (presetId) {
+      // Backend expects presetId (optional). If not provided, backend uses default profile.
+      formData.append('presetId', presetId);
+    }
+
+    const tenantId = typeof opts.tenantId === 'string' && opts.tenantId.trim()
+      ? opts.tenantId.trim()
+      : getTenantId();
+
     const res = await fetch('/api/slice', {
       method: 'POST',
       body: formData,
+      headers: {
+        'x-tenant-id': tenantId,
+      },
       signal: controller.signal,
     });
 

@@ -1,729 +1,646 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../../components/AppIcon';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { PRUSA_PARAMETER_CATALOG } from '../../data/prusaParameterCatalog';
 import { readTenantJson, writeTenantJson } from '../../utils/adminTenantStorage';
-import { coerceIniValue, parseIniToKeyValue } from '../../utils/ini';
+import { deletePreset, listPresets, patchPreset, setDefaultPreset, uploadPreset } from '../../services/presetsApi';
 
-// =============================
-// Presets (Admin) — Variant A (front-end demo)
-// - Import .ini (PrusaSlicer) and map keys to Parameter catalog
-// - Store preset metadata + values in localStorage
-// - Show Diff vs Admin defaults
-// =============================
+// =============================================================
+// Admin / Presets (backend sync)
+// Checkpoint 2: full CRUD via backend + offline view-only fallback
+// =============================================================
 
-const STORAGE_PRESETS = 'presets:v1';
-const STORAGE_PARAMS = 'parameters:v1';
+const LOCAL_FALLBACK_NAMESPACE = 'presets:v1';
 
-function nowIso() {
-  return new Date().toISOString();
+function pickLang(language, cs, en) {
+  return String(language || '').toLowerCase().startsWith('en') ? en : cs;
 }
 
-function uid() {
-  return `p_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+function normalizePreset(raw) {
+  const id = String(raw?.id || '').trim();
+  const name = String(raw?.name || raw?.title || id || '').trim();
+
+  const orderRaw = raw?.order ?? raw?.priority ?? raw?.sort;
+  const orderNum = Number(orderRaw);
+  const order = Number.isFinite(orderNum) ? orderNum : 0;
+
+  const visibleInWidgetRaw =
+    raw?.visibleInWidget ?? raw?.visible_in_widget ?? raw?.widgetVisible ?? raw?.visible;
+  const visibleInWidget = Boolean(visibleInWidgetRaw);
+
+  const createdAt = raw?.createdAt ? String(raw.createdAt) : '';
+  const updatedAt = raw?.updatedAt ? String(raw.updatedAt) : '';
+  const sizeBytes = Number.isFinite(Number(raw?.sizeBytes)) ? Number(raw.sizeBytes) : null;
+
+  return { id, name, order, visibleInWidget, createdAt, updatedAt, sizeBytes };
 }
 
-function safeJsonEqual(a, b) {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
+function readLocalFallback() {
+  // Fallback is VIEW-ONLY and may come from older localStorage formats.
+  const raw = readTenantJson(LOCAL_FALLBACK_NAMESPACE, []);
 
-function getLabel(def, language) {
-  if (!def?.label) return def?.key || '';
-  return def.label[language] || def.label.cs || def.label.en || def.key;
-}
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.presets)
+      ? raw.presets
+      : Array.isArray(raw?.items)
+        ? raw.items
+        : [];
 
-function getCatalogMap() {
-  const map = {};
-  for (const d of PRUSA_PARAMETER_CATALOG) map[d.key] = d;
-  return map;
-}
+  const presets = list.map(normalizePreset).filter((p) => p.id);
 
-function buildAdminDefaultMap() {
-  const persisted = readTenantJson(STORAGE_PARAMS, null);
-  const byKey = getCatalogMap();
-  const out = {};
-
-  for (const def of PRUSA_PARAMETER_CATALOG) {
-    const row = persisted?.parameters?.[def.key];
-    const override = row?.default_value_override;
-    out[def.key] = override == null ? def.defaultValue : override;
+  let defaultPresetId = null;
+  if (raw && !Array.isArray(raw) && typeof raw?.defaultPresetId === 'string' && raw.defaultPresetId) {
+    defaultPresetId = raw.defaultPresetId;
+  } else {
+    const selected = list.find((p) => p?.is_default_selected);
+    if (selected?.id) defaultPresetId = String(selected.id);
   }
 
-  // Include unknown definitions if present in storage (for forward compatibility)
-  if (persisted?.parameters) {
-    for (const [k, v] of Object.entries(persisted.parameters)) {
-      if (!(k in out) && v && 'default_value_override' in v) {
-        out[k] = v.default_value_override;
-      }
-    }
+  return { presets, defaultPresetId: defaultPresetId || null };
+}
+
+function writeLocalFallback({ presets, defaultPresetId }) {
+  try {
+    writeTenantJson(LOCAL_FALLBACK_NAMESPACE, {
+      presets: Array.isArray(presets) ? presets : [],
+      defaultPresetId: defaultPresetId || null,
+    });
+  } catch {
+    // ignore
   }
-
-  return { defaults: out, defsByKey: byKey };
-}
-
-function readPresets() {
-  const list = readTenantJson(STORAGE_PRESETS, []);
-  if (!Array.isArray(list)) return [];
-  return list;
-}
-
-function writePresets(list) {
-  writeTenantJson(STORAGE_PRESETS, list);
-}
-
-function downloadTextFile(filename, text) {
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function sortByOrderThenName(a, b) {
-  const oa = Number.isFinite(Number(a.order)) ? Number(a.order) : 9999;
-  const ob = Number.isFinite(Number(b.order)) ? Number(b.order) : 9999;
-  if (oa !== ob) return oa - ob;
-  return String(a.name || '').localeCompare(String(b.name || ''));
-}
-
-function computeDiffCount(preset, adminDefaults) {
-  const values = preset?.values || {};
-  let n = 0;
-  for (const [k, v] of Object.entries(values)) {
-    if (!safeJsonEqual(v, adminDefaults[k])) n += 1;
-  }
-  return n;
 }
 
 export default function AdminPresets() {
-  return (
-    <div>
-      <Routes>
-        <Route index element={<PresetsList />} />
-        <Route path=":presetId" element={<PresetDetail />} />
-        <Route path="*" element={<Navigate to="." replace />} />
-      </Routes>
-    </div>
-  );
-}
-
-function PresetsList() {
   const { language } = useLanguage();
-  const navigate = useNavigate();
 
-  const { defaults: adminDefaults, defsByKey } = useMemo(() => buildAdminDefaultMap(), []);
+  const strings = useMemo(
+    () => ({
+      title: pickLang(language, 'Presety', 'Presets'),
+      subtitle: pickLang(
+        language,
+        'Správa presetů (.ini) uložených na serveru. Presety se používají pro slicování v PrusaSlicer CLI.',
+        'Manage server-stored presets (.ini). Presets are used for slicing in PrusaSlicer CLI.'
+      ),
+      loading: pickLang(language, 'Načítám presety…', 'Loading presets…'),
+      refresh: pickLang(language, 'Obnovit', 'Refresh'),
+      uploadPreset: pickLang(language, 'Nahrát preset', 'Upload preset'),
+      saveChanges: pickLang(language, 'Uložit změny', 'Save changes'),
+      setAsDefault: pickLang(language, 'Nastavit jako výchozí', 'Set as default'),
+      delete: pickLang(language, 'Smazat', 'Delete'),
+      visibleInWidget: pickLang(language, 'Viditelný ve widgetu', 'Visible in widget'),
+      namePlaceholder: pickLang(language, 'Název presetu', 'Preset name'),
+      orderLabel: pickLang(language, 'Pořadí', 'Order'),
+      fileLabel: pickLang(language, 'Soubor (.ini)', 'File (.ini)'),
+      offlineBanner: pickLang(
+        language,
+        'Offline režim: Backend není dostupný. Zobrazuji poslední lokální data, změny se neuloží na server.',
+        "Offline mode: Backend is unreachable. Showing last local data; changes won't be saved to server."
+      ),
+      offlineActionTooltip: pickLang(
+        language,
+        'Backend nedostupný — nelze uložit změny.',
+        'Backend unreachable — cannot save changes.'
+      ),
+      backendErrorLabel: pickLang(language, 'Chyba:', 'Error:'),
+      emptyTitle: pickLang(language, 'Zatím nemáš žádné presety.', 'No presets yet.'),
+      emptyHint: pickLang(
+        language,
+        'Jakmile bude backend dostupný, přidáš presety nahráním .ini.',
+        'Once backend is available, you can add presets by uploading an .ini.'
+      ),
+      colName: pickLang(language, 'Název', 'Name'),
+      colOrder: pickLang(language, 'Pořadí', 'Order'),
+      colWidget: pickLang(language, 'Widget', 'Widget'),
+      colActions: pickLang(language, 'Akce', 'Actions'),
+      badgeDefault: pickLang(language, 'Výchozí', 'Default'),
+      badgeVisible: pickLang(language, 'Viditelný', 'Visible'),
+      statusOffline: pickLang(language, 'Offline', 'Offline'),
+      statusOnline: pickLang(language, 'Online', 'Online'),
+      toastFail: pickLang(language, 'Operace se nezdařila:', 'Operation failed:'),
+      toastSaved: pickLang(language, 'Preset uložen.', 'Preset saved.'),
+      toastDefaultSet: pickLang(language, 'Výchozí preset nastaven.', 'Default preset set.'),
+      toastDeleted: pickLang(language, 'Preset smazán.', 'Preset deleted.'),
+      toastDeletedNewDefault: pickLang(language, 'Preset smazán. Nový výchozí:', 'Preset deleted. New default:'),
+      toastDeletedNoDefault: pickLang(
+        language,
+        'Preset smazán. Žádný výchozí preset — používám default profil.',
+        'Preset deleted. No default preset — using default profile.'
+      ),
+      deleteDefaultTitle: pickLang(language, 'Smazat výchozí preset?', 'Delete default preset?'),
+      deleteDefaultBody: pickLang(
+        language,
+        'Po smazání se výchozí preset automaticky přepne na preset s nejvyšší prioritou.\nPokud žádný další preset nezůstane, budou použity default parametry z Admin/parameters (backend PRUSA_DEFAULT_INI), dokud nepřidáš nový preset.',
+        'After deletion, the default preset will switch to the highest-priority preset.\nIf no presets remain, defaults from Admin/parameters (backend PRUSA_DEFAULT_INI) will be used until you add a new preset.'
+      ),
+      confirmYesDelete: pickLang(language, 'Ano, smazat', 'Yes, delete'),
+      confirmCancel: pickLang(language, 'Zrušit', 'Cancel'),
+      hintMax5mb: pickLang(language, 'Max 5 MB. Pouze .ini.', 'Max 5 MB. .ini only.'),
+    }),
+    [language]
+  );
 
-  const [presets, setPresets] = useState(() => readPresets());
-  const [importState, setImportState] = useState(null);
-  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [backendError, setBackendError] = useState('');
+  const [presets, setPresets] = useState([]);
+  const [defaultPresetId, setDefaultPresetId] = useState(null);
+
+  // Upload form
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploadName, setUploadName] = useState('');
+  const [uploadOrder, setUploadOrder] = useState(0);
+  const [uploadVisibleInWidget, setUploadVisibleInWidget] = useState(true);
+  const [uploading, setUploading] = useState(false);
+
+  // Inline edits per preset id
+  const [edits, setEdits] = useState({});
+  const [savingById, setSavingById] = useState({});
+  const [defaultingById, setDefaultingById] = useState({});
+  const [deletingById, setDeletingById] = useState({});
+
+  // Delete default modal
+  const [deleteModal, setDeleteModal] = useState({ open: false, presetId: null });
+
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+
+  const showToast = (kind, msg) => {
+    setToast({ kind, msg });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
+  };
+
+  const showError = (message) => {
+    showToast('err', `${strings.toastFail} ${message || 'Unknown error'}`);
+  };
+
+  const load = async () => {
+    setLoading(true);
+    setBackendError('');
+
+    const res = await listPresets();
+    if (res.ok) {
+      const payload = res.data || {};
+      const list = Array.isArray(payload.presets)
+        ? payload.presets
+        : Array.isArray(payload.items)
+          ? payload.items
+          : [];
+
+      const mapped = list.map(normalizePreset).filter((p) => p.id);
+      const def = payload.defaultPresetId || payload.defaultPreset || payload.default || null;
+
+      setPresets(mapped);
+      setDefaultPresetId(def ? String(def) : null);
+      setOfflineMode(false);
+      setBackendError('');
+
+      // Cache last known server state for offline view.
+      writeLocalFallback({ presets: mapped, defaultPresetId: def ? String(def) : null });
+    } else {
+      const local = readLocalFallback();
+      setPresets(local.presets);
+      setDefaultPresetId(local.defaultPresetId);
+      setOfflineMode(true);
+      setBackendError(res.message || 'Backend unreachable');
+      showToast('err', `${strings.toastFail} ${res.message || 'Backend unreachable'}`);
+    }
+
+    setLoading(false);
+  };
+
+  // Keep edits in sync with loaded presets (do not overwrite in-progress edits).
+  useEffect(() => {
+    setEdits((prev) => {
+      const next = { ...prev };
+      presets.forEach((p) => {
+        if (!next[p.id]) {
+          next[p.id] = { name: p.name || '', order: p.order || 0, visibleInWidget: !!p.visibleInWidget };
+        }
+      });
+      // Remove edits for presets that disappeared.
+      Object.keys(next).forEach((id) => {
+        if (!presets.some((p) => p.id === id)) delete next[id];
+      });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presets]);
 
   useEffect(() => {
-    setPresets(readPresets());
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const list = [...presets].sort(sortByOrderThenName);
-    if (!q) return list;
-    return list.filter((p) => {
-      const hay = `${p.name || ''} ${p.description || ''}`.toLowerCase();
-      return hay.includes(q);
-    });
-  }, [presets, search]);
-
-  const onPickIniFile = async (file) => {
-    if (!file) return;
-    const text = await file.text();
-    const kv = parseIniToKeyValue(text);
-
-    const mapped = {};
-    const unknown = [];
-    for (const [k, raw] of Object.entries(kv)) {
-      const def = defsByKey[k];
-      if (!def) {
-        unknown.push(k);
-        continue;
-      }
-      mapped[k] = coerceIniValue(raw, def.dataType);
-    }
-
-    // Keep ALL parsed keys for future exact slicing. Keys not present in our catalog
-    // are stored as unknown_* and are still preserved in raw_ini/raw_values.
-    const unknown_values = {};
-    for (const k of unknown) unknown_values[k] = kv[k];
-    setImportState({
-      filename: file.name,
-      raw_ini: text,
-      all: kv,
-      mapped,
-      unknown,
-      unknown_values,
-      meta: {
-        name: file.name.replace(/\.ini$/i, ''),
-        description: '',
-        visible_in_widget: false,
-        order: 10,
-        is_default_selected: false,
-      },
-    });
-  };
-
-  const doImport = () => {
-    if (!importState) return;
-    const p = {
-      id: uid(),
-      name: importState.meta.name || 'New preset',
-      description: importState.meta.description || '',
-      visible_in_widget: Boolean(importState.meta.visible_in_widget),
-      order: Number(importState.meta.order) || 10,
-      is_default_selected: Boolean(importState.meta.is_default_selected),
-      values: importState.mapped,
-      raw_values: importState.all,
-      raw_ini: importState.raw_ini,
-      unknown_keys: importState.unknown,
-      unknown_values: importState.unknown_values,
-      created_at: nowIso(),
-      updated_at: nowIso(),
-    };
-
-    let next = [...presets];
-    if (p.is_default_selected) {
-      next = next.map((x) => ({ ...x, is_default_selected: false }));
-    }
-    next.push(p);
-    writePresets(next);
-    setPresets(next);
-    setImportState(null);
-  };
-
-  const deletePreset = (id) => {
-    const p = presets.find((x) => x.id === id);
-    if (!p) return;
-    const ok = window.confirm(`Smazat preset "${p.name}"?`);
-    if (!ok) return;
-    const next = presets.filter((x) => x.id !== id);
-    writePresets(next);
-    setPresets(next);
-  };
-
-  const duplicatePreset = (id) => {
-    const p = presets.find((x) => x.id === id);
-    if (!p) return;
-    const copy = {
-      ...p,
-      id: uid(),
-      name: `${p.name} (copy)`,
-      is_default_selected: false,
-      created_at: nowIso(),
-      updated_at: nowIso(),
-    };
-    const next = [...presets, copy];
-    writePresets(next);
-    setPresets(next);
-  };
-
-  const setDefaultPreset = (id) => {
-    const next = presets.map((p) => ({ ...p, is_default_selected: p.id === id }));
-    writePresets(next);
-    setPresets(next);
-  };
-
-  return (
-    <div className="page">
-      <div className="page-header">
-        <div>
-          <h1 className="title">Presets</h1>
-          <p className="subtitle">
-            Importuj .ini z PrusaSliceru, nastav viditelnost ve widgetu a zkontroluj rozdíly (Diff) oproti Admin defaultům.
-          </p>
-        </div>
-
-        <div className="right">
-          <label className="btn btn-primary">
-            <Icon name="Upload" size={16} />
-            <span>Import .ini</span>
-            <input
-              type="file"
-              accept=".ini,text/plain"
-              style={{ display: 'none' }}
-              onChange={(e) => onPickIniFile(e.target.files?.[0])}
-            />
-          </label>
-        </div>
-      </div>
-
-      <div className="toolbar">
-        <div className="search">
-          <Icon name="Search" size={16} />
-          <input
-            placeholder="Hledat preset…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="empty">
-          <p>Zatím nemáš žádné presety.</p>
-          <p className="muted">Klikni na „Import .ini“ a nahraj export z PrusaSliceru.</p>
-        </div>
-      ) : (
-        <div className="grid">
-          {filtered.map((p) => {
-            const diffCount = computeDiffCount(p, adminDefaults);
-            return (
-              <div key={p.id} className="card">
-                <div className="card-header">
-                  <div>
-                    <div className="card-title">
-                      {p.name}
-                      {p.is_default_selected && <span className="badge badge-green">Default</span>}
-                      {p.visible_in_widget && <span className="badge badge-blue">Visible</span>}
-                    </div>
-                    {p.description ? <div className="card-desc">{p.description}</div> : null}
-                  </div>
-                  <div className="meta">
-                    <div className="meta-line">
-                      <span className="muted">Changes:</span> <b>{diffCount}</b>
-                    </div>
-                    <div className="meta-line">
-                      <span className="muted">Order:</span> <b>{Number.isFinite(Number(p.order)) ? p.order : '—'}</b>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="card-actions">
-                  <button className="btn" onClick={() => navigate(`/admin/presets/${p.id}`)}>
-                    <Icon name="Pencil" size={16} />
-                    Upravit
-                  </button>
-                  <button className="btn" onClick={() => duplicatePreset(p.id)}>
-                    <Icon name="Copy" size={16} />
-                    Duplikovat
-                  </button>
-                  <button
-                    className="btn"
-                    onClick={() => downloadTextFile(`${p.name || 'preset'}.ini`, p.raw_ini || '')}
-                  >
-                    <Icon name="Download" size={16} />
-                    Stáhnout ini
-                  </button>
-                </div>
-
-                <div className="card-actions second">
-                  <button className="btn" onClick={() => setDefaultPreset(p.id)}>
-                    <Icon name="Star" size={16} />
-                    Nastavit jako default
-                  </button>
-                  <button className="btn btn-danger" onClick={() => deletePreset(p.id)}>
-                    <Icon name="Trash2" size={16} />
-                    Smazat
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {importState && (
-        <ImportModal
-          language={language}
-          state={importState}
-          onClose={() => setImportState(null)}
-          onChange={(next) => setImportState(next)}
-          onImport={doImport}
-        />
-      )}
-
-      <style>{css}</style>
-    </div>
-  );
-}
-
-function PresetDetail() {
-  const { presetId } = useParams();
-  const { language } = useLanguage();
-  const navigate = useNavigate();
-
-  const { defaults: adminDefaults, defsByKey } = useMemo(() => buildAdminDefaultMap(), []);
-  const [presets, setPresets] = useState(() => readPresets());
-  const preset = presets.find((p) => p.id === presetId);
-
-  const [tab, setTab] = useState('diff');
-  const [draft, setDraft] = useState(() => (preset ? JSON.parse(JSON.stringify(preset)) : null));
-
-const rawAll = useMemo(() => {
-  if (!draft) return {};
-  if (draft.raw_values && typeof draft.raw_values === 'object') return draft.raw_values;
-  if (draft.raw_ini && typeof draft.raw_ini === 'string') return parseIniToKeyValue(draft.raw_ini);
-  return draft.values || {};
-}, [draft]);
-
-const unknownPairs = useMemo(() => {
-  if (!draft) return {};
-  if (draft.unknown_values && typeof draft.unknown_values === 'object') return draft.unknown_values;
-  if (draft.unknown_keys && Array.isArray(draft.unknown_keys)) {
-    const o = {};
-    for (const k of draft.unknown_keys) o[k] = rawAll?.[k];
-    return o;
-  }
-  return {};
-}, [draft, rawAll]);
-
-
   useEffect(() => {
-    setPresets(readPresets());
-  }, [presetId]);
+    return () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current);
+    };
+  }, []);
 
-  useEffect(() => {
-    setDraft(preset ? JSON.parse(JSON.stringify(preset)) : null);
-  }, [presetId, preset]);
+  const statusLabel = offlineMode ? strings.statusOffline : strings.statusOnline;
 
-  if (!preset || !draft) {
+  const actionsDisabled = offlineMode || loading;
+  const actionsTitle = offlineMode ? strings.offlineActionTooltip : undefined;
+
+  const onUpload = async () => {
+    if (actionsDisabled) return;
+    if (!uploadFile) {
+      showError(pickLang(language, 'Vyber .ini soubor.', 'Select an .ini file.'));
+      return;
+    }
+    setUploading(true);
+    const meta = {
+      name: uploadName?.trim() || undefined,
+      order: Number.isFinite(Number(uploadOrder)) ? Number(uploadOrder) : 0,
+      visibleInWidget: !!uploadVisibleInWidget,
+    };
+    const res = await uploadPreset(uploadFile, meta);
+    if (!res.ok) {
+      showError(res.message);
+      setUploading(false);
+      return;
+    }
+    showToast('ok', strings.toastSaved);
+    setUploadFile(null);
+    setUploadName('');
+    setUploadOrder(0);
+    setUploadVisibleInWidget(true);
+    await load();
+    setUploading(false);
+  };
+
+  const isDirty = (id) => {
+    const p = presets.find((x) => x.id === id);
+    const e = edits[id];
+    if (!p || !e) return false;
     return (
-      <div className="page">
-        <div className="page-header">
-          <div>
-            <h1 className="title">Preset nenalezen</h1>
-            <p className="subtitle">Tento preset neexistuje nebo byl smazán.</p>
-          </div>
-          <div className="right">
-            <button className="btn" onClick={() => navigate('/admin/presets')}>
-              <Icon name="ArrowLeft" size={16} />
-              Zpět
-            </button>
-          </div>
-        </div>
-        <style>{css}</style>
-      </div>
+      String(e.name || '').trim() !== String(p.name || '').trim() ||
+      Number(e.order || 0) !== Number(p.order || 0) ||
+      Boolean(e.visibleInWidget) !== Boolean(p.visibleInWidget)
     );
-  }
+  };
 
-  const dirty = !safeJsonEqual(draft, preset);
-  const diffList = computeDiffList(draft, adminDefaults, defsByKey, language);
-
-  const save = () => {
-    const next = presets.map((p) => {
-      if (p.id !== presetId) return p;
-      return { ...draft, updated_at: nowIso() };
+  const onSave = async (id) => {
+    if (actionsDisabled) return;
+    const e = edits[id];
+    if (!e) return;
+    setSavingById((s) => ({ ...s, [id]: true }));
+    const res = await patchPreset(id, {
+      name: String(e.name || '').trim(),
+      order: Number.parseInt(String(e.order ?? 0), 10) || 0,
+      visibleInWidget: !!e.visibleInWidget,
     });
+    if (!res.ok) {
+      showError(res.message);
+      setSavingById((s) => ({ ...s, [id]: false }));
+      return;
+    }
+    showToast('ok', strings.toastSaved);
+    await load();
+    setSavingById((s) => ({ ...s, [id]: false }));
+  };
 
-    // only one default
-    if (draft.is_default_selected) {
-      for (let i = 0; i < next.length; i += 1) {
-        if (next[i].id !== presetId && next[i].is_default_selected) {
-          next[i] = { ...next[i], is_default_selected: false };
-        }
-      }
+  const onSetDefault = async (id) => {
+    if (actionsDisabled) return;
+    setDefaultingById((s) => ({ ...s, [id]: true }));
+    const res = await setDefaultPreset(id);
+    if (!res.ok) {
+      showError(res.message);
+      setDefaultingById((s) => ({ ...s, [id]: false }));
+      return;
+    }
+    showToast('ok', strings.toastDefaultSet);
+    await load();
+    setDefaultingById((s) => ({ ...s, [id]: false }));
+  };
+
+  const runDelete = async (id) => {
+    if (actionsDisabled) return;
+    setDeletingById((s) => ({ ...s, [id]: true }));
+    const res = await deletePreset(id);
+    if (!res.ok) {
+      showError(res.message);
+      setDeletingById((s) => ({ ...s, [id]: false }));
+      return;
     }
 
-    writePresets(next);
-    setPresets(next);
-    navigate(`/admin/presets/${presetId}`, { replace: true });
+    const previousDefaultId = res.data?.previousDefaultId || null;
+    const newDefaultId = res.data?.newDefaultId || res.data?.index?.defaultPresetId || null;
+
+    // Prefer server-provided index to build the toast text (no reliance on async state updates).
+    const indexPresets = Array.isArray(res.data?.index?.presets) ? res.data.index.presets : [];
+    const newDefaultName = newDefaultId
+      ? normalizePreset(indexPresets.find((p) => String(p?.id) === String(newDefaultId))).name
+      : '';
+
+    // Refresh UI state.
+    await load();
+
+    if (!newDefaultId) {
+      showToast('ok', strings.toastDeletedNoDefault);
+    } else if (previousDefaultId && String(previousDefaultId) !== String(newDefaultId)) {
+      showToast('ok', `${strings.toastDeletedNewDefault} ${newDefaultName || newDefaultId}`);
+    } else {
+      showToast('ok', strings.toastDeleted);
+    }
+
+    setDeletingById((s) => ({ ...s, [id]: false }));
   };
 
-  const del = () => {
-    const ok = window.confirm(`Smazat preset "${preset.name}"?`);
-    if (!ok) return;
-    const next = presets.filter((p) => p.id !== presetId);
-    writePresets(next);
-    setPresets(next);
-    navigate('/admin/presets');
+  const onDelete = async (id) => {
+    if (!id) return;
+    const isDef = defaultPresetId && id === defaultPresetId;
+    if (isDef) {
+      setDeleteModal({ open: true, presetId: id });
+      return;
+    }
+    await runDelete(id);
   };
-
-  const downloadRaw = () => downloadTextFile(`${draft.name || 'preset'}.ini`, draft.raw_ini || '');
 
   return (
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="title">{draft.name}</h1>
-          <p className="subtitle">Uprav metadata presetu a zkontroluj změny (Diff) oproti Admin defaultům.</p>
+          <div className="titleRow">
+            <h1 className="title">{strings.title}</h1>
+            <span className={`statusDot ${offlineMode ? 'offline' : 'online'}`} />
+            <span className={`statusText ${offlineMode ? 'offline' : 'online'}`}>{statusLabel}</span>
+          </div>
+          <p className="subtitle">{strings.subtitle}</p>
         </div>
 
         <div className="right">
-          <button className="btn" onClick={() => navigate('/admin/presets')}>
-            <Icon name="ArrowLeft" size={16} />
-            Zpět
-          </button>
-          <button className="btn" onClick={downloadRaw}>
-            <Icon name="Download" size={16} />
-            Stáhnout ini
-          </button>
-          <button className="btn btn-danger" onClick={del}>
-            <Icon name="Trash2" size={16} />
-            Smazat
-          </button>
-          <button className={`btn btn-primary ${dirty ? '' : 'disabled'}`} disabled={!dirty} onClick={save}>
-            <Icon name="Save" size={16} />
-            Uložit
+          <button className="btn" onClick={load} disabled={loading}>
+            <Icon name="RefreshCcw" size={16} />
+            {strings.refresh}
           </button>
         </div>
       </div>
 
-      <div className="layout">
-        <div className="left">
-          <div className="card">
-            <div className="card-title">Metadata</div>
-
-            <div className="form">
-              <div className="field">
-                <label>Název</label>
-                <input value={draft.name || ''} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-              </div>
-
-              <div className="field">
-                <label>Popis</label>
-                <textarea
-                  rows={3}
-                  value={draft.description || ''}
-                  onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                />
-              </div>
-
-              <div className="row">
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(draft.visible_in_widget)}
-                    onChange={(e) => setDraft({ ...draft, visible_in_widget: e.target.checked })}
-                  />
-                  <span>Visible in widget</span>
-                </label>
-
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(draft.is_default_selected)}
-                    onChange={(e) => setDraft({ ...draft, is_default_selected: e.target.checked })}
-                  />
-                  <span>Default selected</span>
-                </label>
-              </div>
-
-              <div className="field small">
-                <label>Pořadí ve widgetu</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={Number.isFinite(Number(draft.order)) ? draft.order : 0}
-                  onChange={(e) => setDraft({ ...draft, order: Number(e.target.value) })}
-                />
-              </div>
-
-              <div className="hint">
-                <div className="muted">Changes:</div>
-                <b>{diffList.length}</b>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rightCol">
-          <div className="tabs">
-            <button className={`tab ${tab === 'diff' ? 'active' : ''}`} onClick={() => setTab('diff')}>
-              Diff
-            </button>
-            <button className={`tab ${tab === 'raw' ? 'active' : ''}`} onClick={() => setTab('raw')}>
-              Raw values
-            </button>
-            <button className={`tab ${tab === 'unknown' ? 'active' : ''}`} onClick={() => setTab('unknown')}>
-              Unknown keys
-            </button>
-          </div>
-
-          {tab === 'diff' && (
-            <div className="card">
-              <div className="card-title">Diff vs Admin defaults</div>
-              {diffList.length === 0 ? (
-                <div className="empty">
-                  <p>Preset nemění žádné parametry oproti Admin defaultům.</p>
-                </div>
-              ) : (
-                <div className="diff">
-                  {diffList.map((row) => (
-                    <div key={row.key} className="diff-row">
-                      <div className="diff-key">
-                        <div className="diff-label">{row.label}</div>
-                        <div className="diff-sub">{row.key}</div>
-                      </div>
-                      <div className="diff-val">
-                        <div className="before">
-                          <span className="muted">Default:</span> <b>{String(row.before)}</b>
-                        </div>
-                        <div className="after">
-                          <span className="muted">Preset:</span> <b>{String(row.after)}</b>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {tab === 'raw' && (
-            <div className="card">
-              <div className="card-title">Raw values (mapped)</div>
-              <div className="raw">
-                {Object.keys(draft.values || {}).length === 0 ? (
-                  <div className="empty">
-                    <p>Preset neobsahuje žádné mapované parametry.</p>
-                  </div>
-                ) : (
-                  <pre>{JSON.stringify(draft.values, null, 2)}</pre>
-                )}
-              </div>
-            </div>
-          )}
-
-          {tab === 'unknown' && (
-            <div className="card">
-              <div className="card-title">Unknown keys</div>
-              {draft.unknown_keys?.length ? (
-                <div className="unknown">
-                  <p className="muted">Tyto klíče z .ini nejsou v katalogu parametrů (zatím).</p>
-                  <pre>{Object.entries(unknownPairs)
-                    .sort(([a], [b]) => a.localeCompare(b))
-                    .map(([k, v]) => `${k}=${v ?? ''}`)
-                    .join('\n')}</pre>
-                </div>
-              ) : (
-                <div className="empty">
-                  <p>Žádné neznámé klíče 🎉</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <style>{css}</style>
-    </div>
-  );
-}
-
-function computeDiffList(preset, adminDefaults, defsByKey, language) {
-  const values = preset?.values || {};
-  const list = [];
-  for (const [k, v] of Object.entries(values)) {
-    const before = adminDefaults[k];
-    if (safeJsonEqual(v, before)) continue;
-    const def = defsByKey[k];
-    list.push({
-      key: k,
-      label: def ? getLabel(def, language) : k,
-      before: before,
-      after: v,
-    });
-  }
-  // stable ordering
-  list.sort((a, b) => String(a.label).localeCompare(String(b.label)));
-  return list;
-}
-
-function ImportModal({ state, onClose, onChange, onImport }) {
-  const mappedCount = Object.keys(state.mapped || {}).length;
-  const unknownCount = state.unknown?.length || 0;
-
-  return (
-    <div className="modalOverlay" role="dialog" aria-modal="true">
-      <div className="modal">
-        <div className="modalHeader">
+      {offlineMode ? (
+        <div className="banner">
+          <Icon name="WifiOff" size={16} />
           <div>
-            <div className="modalTitle">Import preset</div>
-            <div className="modalSub">{state.filename}</div>
+            <div className="bannerTitle">{strings.offlineBanner}</div>
+            {backendError ? (
+              <div className="bannerMeta">
+                <span className="muted">{strings.backendErrorLabel}</span> {backendError}
+              </div>
+            ) : null}
           </div>
-          <button className="btn" onClick={onClose}>
-            <Icon name="X" size={16} />
-          </button>
         </div>
+      ) : null}
 
-        <div className="modalBody">
-          <div className="summary">
-            <div className="pill">
-              <span className="muted">Mapped</span> <b>{mappedCount}</b>
-            </div>
-            <div className="pill">
-              <span className="muted">Unknown</span> <b>{unknownCount}</b>
-            </div>
-          </div>
-
-          <div className="grid2">
-            <div className="field">
-              <label>Název</label>
-              <input
-                value={state.meta.name}
-                onChange={(e) => onChange({ ...state, meta: { ...state.meta, name: e.target.value } })}
-              />
-            </div>
-            <div className="field">
-              <label>Pořadí</label>
-              <input
-                type="number"
-                min={0}
-                value={state.meta.order}
-                onChange={(e) => onChange({ ...state, meta: { ...state.meta, order: Number(e.target.value) } })}
-              />
-            </div>
+      <div className="card pad" style={{ marginTop: 12 }}>
+        <div className="uploadGrid">
+          <div className="field">
+            <div className="label">{strings.fileLabel}</div>
+            <input
+              className="input"
+              type="file"
+              accept=".ini"
+              disabled={actionsDisabled || uploading}
+              title={actionsTitle}
+              onChange={(e) => {
+                const f = e.target.files?.[0] || null;
+                setUploadFile(f);
+                if (f && !uploadName) {
+                  const base = String(f.name || '').replace(/\.ini$/i, '');
+                  setUploadName(base);
+                }
+              }}
+            />
+            <div className="hint">{strings.hintMax5mb}</div>
           </div>
 
           <div className="field">
-            <label>Popis (volitelné)</label>
-            <textarea
-              rows={3}
-              value={state.meta.description}
-              onChange={(e) => onChange({ ...state, meta: { ...state.meta, description: e.target.value } })}
+            <div className="label">{strings.colName}</div>
+            <input
+              className="input"
+              type="text"
+              placeholder={strings.namePlaceholder}
+              value={uploadName}
+              disabled={actionsDisabled || uploading}
+              title={actionsTitle}
+              onChange={(e) => setUploadName(e.target.value)}
             />
           </div>
 
-          <div className="row">
-            <label className="toggle">
-              <input
-                type="checkbox"
-                checked={Boolean(state.meta.visible_in_widget)}
-                onChange={(e) => onChange({ ...state, meta: { ...state.meta, visible_in_widget: e.target.checked } })}
-              />
-              <span>Visible in widget</span>
-            </label>
+          <div className="field">
+            <div className="label">{strings.orderLabel}</div>
+            <input
+              className="input"
+              type="number"
+              value={uploadOrder}
+              disabled={actionsDisabled || uploading}
+              title={actionsTitle}
+              onChange={(e) => setUploadOrder(Number(e.target.value))}
+            />
+          </div>
 
-            <label className="toggle">
+          <div className="field" style={{ alignSelf: 'end' }}>
+            <label className="checkRow" title={actionsTitle}>
               <input
                 type="checkbox"
-                checked={Boolean(state.meta.is_default_selected)}
-                onChange={(e) => onChange({ ...state, meta: { ...state.meta, is_default_selected: e.target.checked } })}
+                checked={uploadVisibleInWidget}
+                disabled={actionsDisabled || uploading}
+                onChange={(e) => setUploadVisibleInWidget(e.target.checked)}
               />
-              <span>Default selected</span>
+              <span>{strings.visibleInWidget}</span>
             </label>
           </div>
 
-          {unknownCount > 0 && (
-            <div className="unknownBox">
-              <div className="unknownTitle">Unknown keys (saved in RAW preset; not editable yet)</div>
-              <div className="unknownList">
-                {state.unknown.slice(0, 20).join(', ')}{state.unknown.length > 20 ? '…' : ''}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="modalFooter">
-          <button className="btn" onClick={onClose}>
-            Zrušit
-          </button>
-          <button className="btn btn-primary" onClick={onImport}>
-            <Icon name="Save" size={16} />
-            Importovat
-          </button>
+          <div className="field" style={{ alignSelf: 'end', justifySelf: 'end' }}>
+            <button
+              className="btn primary"
+              onClick={onUpload}
+              disabled={actionsDisabled || uploading}
+              title={actionsTitle}
+            >
+              {uploading ? <Icon name="Loader2" size={16} className="spin" /> : <Icon name="Upload" size={16} />}
+              {strings.uploadPreset}
+            </button>
+          </div>
         </div>
       </div>
+
+      {loading ? (
+        <div className="loading">
+          <Icon name="Loader2" size={18} className="spin" />
+          <span>{strings.loading}</span>
+        </div>
+      ) : presets.length === 0 ? (
+        <div className="empty">
+          <p>{strings.emptyTitle}</p>
+          <p className="muted">{strings.emptyHint}</p>
+        </div>
+      ) : (
+        <div className="card">
+          <div className="tableWrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{strings.colName}</th>
+                  <th style={{ width: 120 }}>{strings.colOrder}</th>
+                  <th style={{ width: 160 }}>{strings.colWidget}</th>
+                  <th style={{ width: 300 }}>{strings.colActions}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {presets
+                  .slice()
+                  .sort((a, b) => {
+                    const byOrder = (b.order || 0) - (a.order || 0);
+                    if (byOrder !== 0) return byOrder;
+                    return String(a.name).localeCompare(String(b.name));
+                  })
+                  .map((p) => {
+                    const isDefault = defaultPresetId && p.id === defaultPresetId;
+                    const e = edits[p.id] || { name: p.name || '', order: p.order || 0, visibleInWidget: !!p.visibleInWidget };
+                    const dirty = isDirty(p.id);
+                    const saving = !!savingById[p.id];
+                    const defaulting = !!defaultingById[p.id];
+                    const deleting = !!deletingById[p.id];
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          <div className="nameCell">
+                            <div className="nameLine">
+                              <input
+                                className="input inline"
+                                value={e.name}
+                                disabled={actionsDisabled}
+                                title={actionsTitle}
+                                onChange={(ev) =>
+                                  setEdits((s) => ({
+                                    ...s,
+                                    [p.id]: { ...e, name: ev.target.value },
+                                  }))
+                                }
+                              />
+                              {isDefault ? <span className="badge green">{strings.badgeDefault}</span> : null}
+                              {p.visibleInWidget ? (
+                                <span className="badge blue">{strings.badgeVisible}</span>
+                              ) : null}
+                            </div>
+                            <div className="muted small">ID: {p.id}</div>
+                          </div>
+                        </td>
+                        <td>
+                          <input
+                            className="input small mono"
+                            type="number"
+                            value={Number.isFinite(Number(e.order)) ? e.order : 0}
+                            disabled={actionsDisabled}
+                            title={actionsTitle}
+                            onChange={(ev) =>
+                              setEdits((s) => ({
+                                ...s,
+                                [p.id]: { ...e, order: Number(ev.target.value) },
+                              }))
+                            }
+                          />
+                        </td>
+                        <td>
+                          <label className="checkRow" title={actionsTitle}>
+                            <input
+                              type="checkbox"
+                              checked={!!e.visibleInWidget}
+                              disabled={actionsDisabled}
+                              onChange={(ev) =>
+                                setEdits((s) => ({
+                                  ...s,
+                                  [p.id]: { ...e, visibleInWidget: ev.target.checked },
+                                }))
+                              }
+                            />
+                            <span className="mono">{e.visibleInWidget ? 'true' : 'false'}</span>
+                          </label>
+                        </td>
+                        <td>
+                          <div className="actions">
+                            <button
+                              className="btnSmall"
+                              onClick={() => onSave(p.id)}
+                              disabled={actionsDisabled || !dirty || saving || deleting}
+                              title={actionsTitle}
+                            >
+                              {saving ? <Icon name="Loader2" size={16} className="spin" /> : <Icon name="Save" size={16} />}
+                              {strings.saveChanges}
+                            </button>
+
+                            <button
+                              className="btnSmall"
+                              onClick={() => onSetDefault(p.id)}
+                              disabled={actionsDisabled || isDefault || defaulting || deleting}
+                              title={actionsTitle}
+                            >
+                              {defaulting ? <Icon name="Loader2" size={16} className="spin" /> : <Icon name="Star" size={16} />}
+                              {strings.setAsDefault}
+                            </button>
+
+                            <button
+                              className="btnSmall danger"
+                              onClick={() => onDelete(p.id)}
+                              disabled={actionsDisabled || deleting || saving || defaulting}
+                              title={actionsTitle}
+                            >
+                              {deleting ? <Icon name="Loader2" size={16} className="spin" /> : <Icon name="Trash2" size={16} />}
+                              {strings.delete}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {deleteModal.open ? (
+        <div className="modalOverlay" role="dialog" aria-modal="true">
+          <div className="modal">
+            <div className="modalHeader">
+              <div className="modalTitle">{strings.deleteDefaultTitle}</div>
+              <button
+                className="iconBtn"
+                onClick={() => setDeleteModal({ open: false, presetId: null })}
+              >
+                <Icon name="X" size={16} />
+              </button>
+            </div>
+            <div className="modalBody">
+              <pre className="modalText">{strings.deleteDefaultBody}</pre>
+            </div>
+            <div className="modalFooter">
+              <button className="btn" onClick={() => setDeleteModal({ open: false, presetId: null })}>
+                {strings.confirmCancel}
+              </button>
+              <button
+                className="btn danger"
+                onClick={async () => {
+                  const id = deleteModal.presetId;
+                  setDeleteModal({ open: false, presetId: null });
+                  if (id) await runDelete(id);
+                }}
+              >
+                <Icon name="Trash2" size={16} />
+                {strings.confirmYesDelete}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {toast ? (
+        <div className={`toast ${toast.kind === 'err' ? 'toastErr' : 'toastOk'}`}>
+          {toast.kind === 'err' ? <Icon name="XCircle" size={18} /> : <Icon name="CheckCircle" size={18} />}
+          <span>{toast.msg}</span>
+        </div>
+      ) : null}
 
       <style>{css}</style>
     </div>
@@ -731,83 +648,87 @@ function ImportModal({ state, onClose, onChange, onImport }) {
 }
 
 const css = `
-.page{display:flex;flex-direction:column;gap:16px}
-.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
-.title{margin:0;font-size:28px;font-weight:700;color:#111}
-.subtitle{margin:6px 0 0;color:#666;max-width:900px}
-.right{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .page { padding: 20px; }
 
-.toolbar{display:flex;gap:12px;align-items:center;justify-content:space-between}
-.search{display:flex;align-items:center;gap:8px;border:1px solid #e0e0e0;background:#fff;padding:10px 12px;border-radius:10px;min-width:320px}
-.search input{border:none;outline:none;width:100%;font-size:14px}
+  .page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom: 12px; }
 
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
-.card{background:#fff;border:1px solid #e0e0e0;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px}
-.card-header{display:flex;justify-content:space-between;gap:12px}
-.card-title{display:flex;align-items:center;gap:8px;font-weight:700;color:#111}
-.card-desc{color:#666;font-size:13px;margin-top:6px}
-.meta{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
-.meta-line{font-size:12px;color:#333}
-.muted{color:#777}
-.badge{font-size:11px;padding:3px 8px;border-radius:999px;border:1px solid transparent}
-.badge-green{background:#e7f6ed;border-color:#b7e1c5;color:#166534}
-.badge-blue{background:#e8f1ff;border-color:#c7dbff;color:#1e40af}
+  .titleRow { display:flex; align-items:center; gap:10px; }
+  .title { font-size: 22px; font-weight: 700; line-height:1.1; margin:0; }
+  .subtitle { margin: 6px 0 0; color: rgba(0,0,0,0.6); max-width: 920px; }
 
-.card-actions{display:flex;gap:10px;flex-wrap:wrap}
-.card-actions.second{margin-top:-4px}
+  .right { display:flex; gap:10px; }
 
-.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;border:1px solid #e0e0e0;background:#fff;cursor:pointer;font-weight:600;color:#222}
-.btn:hover{background:#f7f7f7}
-.btn-primary{background:#1976d2;border-color:#1976d2;color:#fff}
-.btn-primary:hover{background:#1565c0}
-.btn-danger{background:#fff;border-color:#ef4444;color:#ef4444}
-.btn-danger:hover{background:#fff5f5}
-.disabled{opacity:.6;cursor:not-allowed}
+  .statusDot { width: 10px; height:10px; border-radius: 50%; display:inline-block; margin-top:2px; }
+  .statusDot.online { background: #22c55e; }
+  .statusDot.offline { background: #f59e0b; }
+  .statusText { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(0,0,0,0.1); }
+  .statusText.online { background: rgba(34,197,94,0.12); color: #166534; }
+  .statusText.offline { background: rgba(245,158,11,0.14); color: #92400e; }
 
-.empty{background:#fff;border:1px dashed #d0d0d0;border-radius:14px;padding:20px}
+  .btn { display:inline-flex; align-items:center; gap:8px; padding: 9px 12px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.12); background: #fff; cursor:pointer; font-weight: 600; }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn.primary { background: rgba(59,130,246,0.10); border-color: rgba(59,130,246,0.25); }
+  .btn.danger { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.25); }
 
-.layout{display:grid;grid-template-columns:360px 1fr;gap:16px;align-items:start}
-.left{position:sticky;top:84px}
-.rightCol{display:flex;flex-direction:column;gap:12px}
-.tabs{display:flex;gap:8px;flex-wrap:wrap}
-.tab{padding:10px 12px;border-radius:10px;border:1px solid #e0e0e0;background:#fff;cursor:pointer;font-weight:700}
-.tab.active{background:#e3f2fd;border-color:#bbdefb;color:#1976d2}
+  .btnSmall { display:inline-flex; align-items:center; gap:8px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.12); background: #fff; cursor:pointer; font-weight: 700; font-size: 12px; }
+  .btnSmall:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btnSmall.danger { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.25); }
 
-.form{display:flex;flex-direction:column;gap:12px}
-.field{display:flex;flex-direction:column;gap:6px}
-.field label{font-size:12px;color:#555;font-weight:700}
-.field input,.field textarea{border:1px solid #e0e0e0;border-radius:10px;padding:10px 12px;font-size:14px}
-.field.small{max-width:200px}
-.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
-.toggle{display:flex;gap:10px;align-items:center;font-weight:700;color:#333}
-.hint{display:flex;gap:10px;align-items:center;background:#f7f7f7;border:1px solid #eee;padding:10px 12px;border-radius:10px}
+  .banner { display:flex; gap:10px; align-items:flex-start; border: 1px solid rgba(245,158,11,0.35); background: rgba(245,158,11,0.10); padding: 10px 12px; border-radius: 12px; margin: 12px 0; }
+  .bannerTitle { font-weight: 600; }
+  .bannerMeta { margin-top: 4px; font-size: 12px; }
 
-.diff{display:flex;flex-direction:column}
-.diff-row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid #f1f1f1}
-.diff-row:first-child{border-top:none}
-.diff-label{font-weight:800;color:#111}
-.diff-sub{font-size:12px;color:#777;margin-top:4px}
-.diff-val{display:flex;flex-direction:column;gap:4px;align-items:flex-end}
+  .loading { display:flex; align-items:center; gap:10px; padding: 14px 0; color: rgba(0,0,0,0.75); }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-.raw pre,.unknown pre{white-space:pre-wrap;word-break:break-word;margin:0;background:#0b1020;color:#e6e9f2;padding:12px;border-radius:12px;border:1px solid #111}
+  .empty { padding: 18px 0; }
+  .muted { color: rgba(0,0,0,0.6); }
+  .muted.small { font-size: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
 
-.modalOverlay{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px;z-index:999}
-.modal{background:#fff;border-radius:14px;border:1px solid #e0e0e0;max-width:760px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.15)}
-.modalHeader{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #eee}
-.modalTitle{font-size:18px;font-weight:800;color:#111}
-.modalSub{font-size:12px;color:#666;margin-top:4px}
-.modalBody{padding:16px;display:flex;flex-direction:column;gap:12px}
-.modalFooter{padding:14px 16px;border-top:1px solid #eee;display:flex;justify-content:flex-end;gap:10px}
-.summary{display:flex;gap:10px;flex-wrap:wrap}
-.pill{background:#f7f7f7;border:1px solid #eee;border-radius:999px;padding:6px 10px;font-size:12px}
-.grid2{display:grid;grid-template-columns:1fr 180px;gap:12px}
-.unknownBox{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px}
-.unknownTitle{font-weight:900;color:#7c2d12}
-.unknownList{color:#7c2d12;margin-top:6px;font-size:13px}
+  .card { border: 1px solid rgba(0,0,0,0.10); border-radius: 16px; background: #fff; overflow: hidden; }
+  .card.pad { padding: 14px; overflow: visible; }
+  .tableWrap { width: 100%; overflow: auto; }
+  .table { width: 100%; border-collapse: collapse; }
+  .table thead th { text-align:left; font-size: 12px; letter-spacing: .02em; text-transform: uppercase; color: rgba(0,0,0,0.55); padding: 12px 14px; border-bottom: 1px solid rgba(0,0,0,0.08); background: rgba(0,0,0,0.02); }
+  .table tbody td { padding: 12px 14px; border-bottom: 1px solid rgba(0,0,0,0.06); vertical-align: top; }
+  .table tbody tr:hover td { background: rgba(0,0,0,0.02); }
 
-@media (max-width: 900px){
-  .layout{grid-template-columns:1fr}
-  .left{position:static}
-  .search{min-width:0;width:100%}
-}
+  .nameCell { display:flex; flex-direction:column; gap:3px; }
+  .nameLine { display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
+  .name { font-weight: 700; }
+
+  .uploadGrid { display:grid; grid-template-columns: 1.2fr 1.2fr 0.5fr 0.9fr auto; gap: 12px; align-items: start; }
+  @media (max-width: 980px) { .uploadGrid { grid-template-columns: 1fr; } }
+  .field { display:flex; flex-direction:column; gap:6px; }
+  .label { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em; color: rgba(0,0,0,0.55); }
+  .hint { font-size: 12px; color: rgba(0,0,0,0.55); }
+  .input { width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.14); background: #fff; }
+  .input:disabled { background: rgba(0,0,0,0.02); cursor: not-allowed; }
+  .input.inline { font-weight: 800; }
+  .input.small { padding: 7px 8px; }
+
+  .checkRow { display:inline-flex; align-items:center; gap:8px; user-select:none; }
+
+  .actions { display:flex; gap:10px; flex-wrap: wrap; }
+
+  .badge { display:inline-flex; align-items:center; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid rgba(0,0,0,0.10); }
+  .badge.green { background: rgba(34,197,94,0.12); color: #166534; border-color: rgba(34,197,94,0.28); }
+  .badge.blue { background: rgba(59,130,246,0.12); color: #1d4ed8; border-color: rgba(59,130,246,0.26); }
+
+  /* toast */
+  .toast { position: fixed; right: 16px; bottom: 16px; z-index: 1000; display:flex; align-items:center; gap:10px; padding: 10px 12px; border-radius: 12px; background: #fff; border: 1px solid rgba(0,0,0,0.12); box-shadow: 0 10px 30px rgba(0,0,0,0.10); max-width: min(520px, calc(100vw - 32px)); }
+  .toastOk { border-color: rgba(34,197,94,0.35); }
+  .toastErr { border-color: rgba(239,68,68,0.35); }
+
+  /* modal */
+  .modalOverlay { position: fixed; inset: 0; background: rgba(0,0,0,0.30); display:flex; align-items:center; justify-content:center; padding: 16px; z-index: 1100; }
+  .modal { width: min(720px, 100%); background: #fff; border-radius: 16px; border: 1px solid rgba(0,0,0,0.12); box-shadow: 0 16px 50px rgba(0,0,0,0.18); overflow: hidden; }
+  .modalHeader { display:flex; align-items:center; justify-content:space-between; padding: 14px 16px; border-bottom: 1px solid rgba(0,0,0,0.08); }
+  .modalTitle { font-weight: 900; font-size: 14px; }
+  .iconBtn { width: 34px; height: 34px; display:inline-flex; align-items:center; justify-content:center; border-radius: 10px; border: 1px solid rgba(0,0,0,0.12); background: #fff; cursor:pointer; }
+  .modalBody { padding: 14px 16px; }
+  .modalText { white-space: pre-wrap; margin: 0; font-family: inherit; color: rgba(0,0,0,0.75); line-height: 1.5; }
+  .modalFooter { display:flex; justify-content:flex-end; gap: 10px; padding: 14px 16px; border-top: 1px solid rgba(0,0,0,0.08); background: rgba(0,0,0,0.02); }
 `;
