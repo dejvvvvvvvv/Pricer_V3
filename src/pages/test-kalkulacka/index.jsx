@@ -35,6 +35,8 @@ const TestKalkulacka = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [sliceAllProcessing, setSliceAllProcessing] = useState(false);
 
+  const [batchProgress, setBatchProgress] = useState({ mode: null, done: 0, total: 0 });
+
   // Widget slicing presets (loaded from backend)
   const [availablePresets, setAvailablePresets] = useState([]);
   const [defaultPresetId, setDefaultPresetId] = useState(null);
@@ -193,24 +195,25 @@ const TestKalkulacka = () => {
     }
   }, [selectedFile, printConfigs, updateModelStatus, currentStep, selectedPresetId]);
 
-  const handleSliceAll = useCallback(async () => {
-    if (uploadedFiles.length === 0) return;
-    if (sliceAllProcessing) return;
-
-    // Work on a snapshot to avoid issues if the user clicks around while batching.
-    const filesSnapshot = [...uploadedFiles];
+  const runBatchSlice = useCallback(async (targets, mode) => {
+    if (!Array.isArray(targets) || targets.length === 0) return;
 
     // Use a mutable local so we can downgrade to no-preset mid-batch if backend rejects a preset.
     let effectivePresetId = selectedPresetId;
 
     setSliceAllProcessing(true);
+    setBatchProgress({ mode, done: 0, total: targets.length });
+
     try {
       if (currentStep < 3) setCurrentStep(3);
 
-      for (const fileItem of filesSnapshot) {
-        // Skip already sliced models (saves time). You can reslice individually.
-        if (fileItem.status === 'completed' && fileItem.result) continue;
-        if (!fileItem.file) continue;
+      let done = 0;
+      for (const fileItem of targets) {
+        if (!fileItem?.file) {
+          done += 1;
+          setBatchProgress(prev => ({ ...prev, done }));
+          continue;
+        }
 
         try {
           updateModelStatus(fileItem.id, { status: 'processing', error: null });
@@ -250,12 +253,40 @@ const TestKalkulacka = () => {
             status: 'failed',
             error: String(err?.message || err),
           });
+        } finally {
+          done += 1;
+          setBatchProgress(prev => ({ ...prev, done }));
         }
       }
     } finally {
       setSliceAllProcessing(false);
     }
-  }, [uploadedFiles, sliceAllProcessing, updateModelStatus, currentStep, selectedPresetId]);
+  }, [currentStep, selectedPresetId, updateModelStatus]);
+
+  const handleSliceAll = useCallback(async () => {
+    if (uploadedFiles.length === 0) return;
+    if (sliceAllProcessing) return;
+
+    // Work on a snapshot to avoid issues if the user clicks around while batching.
+    const filesSnapshot = [...uploadedFiles];
+
+    // Slice only models that are not already completed (saves time).
+    const targets = filesSnapshot.filter(f => f?.file && !(f.status === 'completed' && f.result));
+    if (targets.length === 0) return;
+
+    await runBatchSlice(targets, 'all');
+  }, [uploadedFiles, sliceAllProcessing, runBatchSlice]);
+
+  const handleResliceFailed = useCallback(async () => {
+    if (uploadedFiles.length === 0) return;
+    if (sliceAllProcessing) return;
+
+    const filesSnapshot = [...uploadedFiles];
+    const targets = filesSnapshot.filter(f => f?.file && f.status === 'failed');
+    if (targets.length === 0) return;
+
+    await runBatchSlice(targets, 'failed');
+  }, [uploadedFiles, sliceAllProcessing, runBatchSlice]);
 
   const handleFilesUploaded = (uploadedItem) => {
     const fileToProcess = uploadedItem.file instanceof File ? uploadedItem.file : uploadedItem;
@@ -341,6 +372,11 @@ const TestKalkulacka = () => {
     completed: 'Hotovo',
     failed: 'Výpočet se nezdařil'
   };
+
+  const hasFailedModels = uploadedFiles.some(f => f.status === 'failed');
+  const hasMultipleModels = uploadedFiles.length > 1;
+
+
 
   return (
     <div className="min-h-screen bg-background">
@@ -434,23 +470,44 @@ const TestKalkulacka = () => {
               )}
             </div>
 
-            <div className="space-y-6">
-              {/* CTA: Slicing buttons above ModelViewer (hero size) */}
+            <div className="space-y-4">
+              {/* CTA: Slicing buttons above ModelViewer (compact top layout) */}
               {uploadedFiles.length > 0 && selectedFile && (
-                <div className="flex flex-col items-center gap-4">
-                  <GenerateButton
-                    label="Spočítat cenu"
-                    onClick={handleSliceSelected}
-                    loading={selectedFile.status === 'processing'}
-                    disabled={!selectedFile || selectedFile.status === 'processing' || sliceAllProcessing}
-                  />
-                  {uploadedFiles.length > 1 && (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="flex flex-wrap items-center justify-center gap-3">
                     <GenerateButton
-                      label="Spočítat vše"
-                      onClick={handleSliceAll}
-                      loading={sliceAllProcessing}
-                      disabled={sliceAllProcessing}
+                      size="top"
+                      label="Spočítat cenu"
+                      onClick={handleSliceSelected}
+                      loading={selectedFile.status === 'processing'}
+                      disabled={!selectedFile || selectedFile.status === 'processing' || sliceAllProcessing}
                     />
+
+                    {hasMultipleModels && (
+                      <GenerateButton
+                        size="top"
+                        label="Spočítat vše"
+                        onClick={handleSliceAll}
+                        loading={sliceAllProcessing && batchProgress.mode === 'all'}
+                        disabled={sliceAllProcessing || uploadedFiles.some(f => f.status === 'processing')}
+                      />
+                    )}
+
+                    {hasFailedModels && (
+                      <GenerateButton
+                        size="top"
+                        label="Reslice failed"
+                        onClick={handleResliceFailed}
+                        loading={sliceAllProcessing && batchProgress.mode === 'failed'}
+                        disabled={sliceAllProcessing || uploadedFiles.some(f => f.status === 'processing')}
+                      />
+                    )}
+                  </div>
+
+                  {sliceAllProcessing && batchProgress.total > 0 && (
+                    <div className="text-xs text-muted-foreground text-center">
+                      {batchProgress.mode === 'failed' ? 'Reslice failed' : 'Spočítat vše'} – hotovo {batchProgress.done}/{batchProgress.total}
+                    </div>
                   )}
                 </div>
               )}
