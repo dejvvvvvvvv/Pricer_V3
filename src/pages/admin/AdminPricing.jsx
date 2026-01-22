@@ -3,16 +3,13 @@
 //   src/pages/admin/AdminPricing.jsx
 //
 // Notes (current phase):
-// - Works even without backend: loads/saves full config to localStorage.
-// - If backend API is reachable, it also saves basic fields (materials + timeRate) to API for compatibility.
-// - Advanced rules are demo/localStorage-only until backend (part 2) is updated.
+// - Single source of truth: tenant-scoped V3 storage (namespace: pricing:v3)
+// - No backend sync here (handled elsewhere). This page reads/writes only via loadPricingConfigV3/savePricingConfigV3.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Icon from '../../components/AppIcon';
-import { API_BASE_URL } from '../../config/api';
 import { useLanguage } from '../../contexts/LanguageContext';
-
-const STORAGE_KEY_PREFIX = 'modelpricer_pricing_config__';
+import { loadPricingConfigV3, savePricingConfigV3 } from '../../utils/adminPricingStorage';
 
 const DEFAULT_RULES = {
   // time
@@ -63,30 +60,87 @@ function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
+function createStableId(prefix = 'id') {
+  try {
+    // Modern browsers
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return `${prefix}-${crypto.randomUUID()}`;
+  } catch {
+    // ignore
+  }
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function slugifyMaterialKey(input) {
+  const s = String(input || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+  return s;
+}
+
+function isValidMaterialKey(key) {
+  return /^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(String(key || ''));
+}
+
+function ensureUniqueMaterialKey(baseKey, materials, currentId = null) {
+  const existing = new Set(
+    (materials || [])
+      .filter((m) => (currentId ? m?.id !== currentId : true))
+      .map((m) => String(m?.key || '').toLowerCase())
+      .filter(Boolean)
+  );
+  let k = String(baseKey || '').toLowerCase();
+  if (!k) return k;
+  if (!existing.has(k)) return k;
+  let i = 2;
+  while (existing.has(`${k}_${i}`)) i += 1;
+  return `${k}_${i}`;
+}
+
+function normalizeHex(hex) {
+  const raw = String(hex || '').trim();
+  if (!raw) return '';
+  const withHash = raw.startsWith('#') ? raw : `#${raw}`;
+  const up = withHash.toUpperCase();
+  return up;
+}
+
+function isValidHex(hex) {
+  return /^#[0-9A-F]{6}$/.test(String(hex || '').trim().toUpperCase());
+}
+
 function buildMaterialPrices(materials) {
+  // Derived map for compatibility: { [materialKey]: pricePerGram }
   const materialPrices = {};
-  materials.forEach((mat) => {
-    if (mat?.name && mat?.enabled) {
-      const key = mat.name.toLowerCase().replace(/\s+/g, '_');
-      materialPrices[key] = clampMin0(mat.price);
+  (materials || []).forEach((mat) => {
+    if (mat?.enabled && mat?.key) {
+      const key = String(mat.key).toLowerCase();
+      materialPrices[key] = clampMin0(mat.price_per_gram);
     }
   });
   return materialPrices;
 }
 
-function materialPricesToArray(materialPrices) {
-  const arr = [];
-  if (materialPrices && typeof materialPrices === 'object') {
-    Object.entries(materialPrices).forEach(([key, price]) => {
-      arr.push({
-        id: key,
-        name: key.replace(/_/g, ' ').toUpperCase(),
-        price: clampMin0(price),
-        enabled: true,
-      });
+function materialPricesToMaterialsV3(materialPrices) {
+  const out = [];
+  if (!materialPrices || typeof materialPrices !== 'object') return out;
+  Object.entries(materialPrices).forEach(([key, price]) => {
+    const k = slugifyMaterialKey(key);
+    if (!k) return;
+    out.push({
+      id: createStableId('mat'),
+      key: k,
+      name: String(key).replace(/_/g, ' ').toUpperCase(),
+      enabled: true,
+      price_per_gram: clampMin0(price),
+      colors: [],
     });
-  }
-  return arr;
+  });
+  return out;
 }
 
 function formatCzk(n) {
@@ -204,14 +258,15 @@ function calcPricingPreview(rules, preview) {
 const AdminPricing = () => {
   const { t, language } = useLanguage();
 
-  const customerId = 'test-customer-1'; // TODO: Get from auth/context
-  const storageKey = `${STORAGE_KEY_PREFIX}${customerId}`;
+  // Tenant-scoped V3 storage is the single source of truth.
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   // Materials (existing feature)
   const [materials, setMaterials] = useState([]);
+  // Default material (key). Saved in V3 config so other parts (widget/calc) have a stable default.
+  const [defaultMaterialKey, setDefaultMaterialKey] = useState('pla');
   // Advanced rules + time rate
   const [rules, setRules] = useState(deepClone(DEFAULT_RULES));
   // Preview panel state
@@ -228,8 +283,8 @@ const AdminPricing = () => {
     return {
       title: cs ? 'Pricing' : 'Pricing',
       subtitle: cs
-        ? 'Nastav cenu času, minima, zaokrouhlování a přirážku. (Demo: pokročilé věci se ukládají lokálně do prohlížeče.)'
-        : 'Configure time rate, minimums, rounding and markup. (Demo: advanced settings are saved locally in your browser.)',
+        ? 'Nastav cenu času, minima, zaokrouhlování, přirážku a materiály (včetně barev). Ukládá se tenantově do V3 storage.'
+        : 'Configure time rate, minimums, rounding, markup and materials (including colors). Saved per-tenant in V3 storage.',
       save: cs ? 'Uložit změny' : 'Save changes',
       saved: cs ? 'Uloženo' : 'Saved',
       unsaved: cs ? 'Neuložené změny' : 'Unsaved changes',
@@ -238,11 +293,12 @@ const AdminPricing = () => {
       import: cs ? 'Importovat JSON' : 'Import JSON',
       copyOk: cs ? 'Zkopírováno do schránky.' : 'Copied to clipboard.',
       copyFail: cs ? 'Nepodařilo se zkopírovat – zkopíruj ručně z dialogu.' : 'Copy failed – copy manually from the dialog.',
-      offlineInfo: cs
-        ? 'Backend není dostupný – běžíš v offline demo režimu (localStorage).'
-        : 'Backend not reachable – running in offline demo mode (localStorage).',
-      apiOk: cs ? 'Uloženo (API + localStorage).' : 'Saved (API + localStorage).',
-      localOk: cs ? 'Uloženo (localStorage).' : 'Saved (localStorage).',
+      loadOk: cs ? 'Konfigurace načtena.' : 'Configuration loaded.',
+      saveOk: cs ? 'Uloženo.' : 'Saved.',
+      saveError: cs ? 'Uložení se nepodařilo.' : 'Save failed.',
+      exportOk: cs ? 'JSON zkopírován do schránky.' : 'JSON copied to clipboard.',
+      importOk: cs ? 'Konfigurace importována (nezapomeň uložit).' : 'Configuration imported (don’t forget to save).',
+      resetOk: cs ? 'Resetováno na default (nezapomeň uložit).' : 'Reset to defaults (don’t forget to save).',
       invalid: cs ? 'Oprav chyby ve formuláři (hodnoty musí být ≥ 0).' : 'Fix validation errors (values must be ≥ 0).',
       preview: cs ? 'Testovací kalkulace' : 'Pricing sandbox',
       previewToggle: cs ? 'Testovat na příkladu' : 'Test with example',
@@ -258,42 +314,225 @@ const AdminPricing = () => {
     setPreview((prev) => ({ ...prev, [key]: value }));
   };
 
+  const createDefaultMaterial = () => ({
+    id: 'mat-pla',
+    key: 'pla',
+    name: 'PLA',
+    enabled: true,
+    price_per_gram: 0.6,
+    colors: [],
+  });
+
+  const ensureAtLeastOneMaterial = (list) => {
+    const arr = Array.isArray(list) ? list.filter(Boolean) : [];
+    return arr.length > 0 ? arr : [createDefaultMaterial()];
+  };
+
+  const [colorDrafts, setColorDrafts] = useState({}); // { [materialId]: { name, hex } }
+
   const addMaterial = () => {
     setMaterials((prev) => [
       ...prev,
       {
-        id: `mat-${Date.now()}`,
+        id: createStableId('mat'),
+        key: '',
         name: '',
-        price: 0,
         enabled: true,
+        price_per_gram: 0,
+        colors: [],
       },
     ]);
     setTouched(true);
   };
 
   const updateMaterial = (index, field, value) => {
+    const currentMat = materials[index];
+    const currentKey = String(currentMat?.key || '').toLowerCase();
+    const defKey = String(defaultMaterialKey || '').toLowerCase();
+
     setMaterials((prev) =>
-      prev.map((mat, i) => (i === index ? { ...mat, [field]: value } : mat))
+      prev.map((mat, i) => {
+        if (i !== index) return mat;
+        const next = { ...mat, [field]: value };
+
+        // Ensure colors array exists
+        if (!Array.isArray(next.colors)) next.colors = [];
+
+        // Auto-generate key ONLY if it's currently empty (stable afterwards)
+        if (field === 'name') {
+          if (!String(mat.key || '').trim()) {
+            const slug = slugifyMaterialKey(value);
+            if (slug) next.key = ensureUniqueMaterialKey(slug, prev, mat.id);
+          }
+        }
+
+        if (field === 'key') {
+          const slug = slugifyMaterialKey(value);
+          next.key = slug;
+        }
+
+        if (field === 'price_per_gram') {
+          next.price_per_gram = safeNum(value, 0);
+        }
+
+        return next;
+      })
     );
+
+    // Keep default material pointing to the same material where possible
+    if (field === 'key' && currentKey && currentKey === defKey) {
+      const slug = slugifyMaterialKey(value);
+      if (slug) setDefaultMaterialKey(slug);
+    }
+    if (field === 'enabled' && currentKey && currentKey === defKey && value === false) {
+      // If default got disabled, try to move default to another enabled material.
+      const fallback = materials.find((m, i) => i !== index && m?.enabled && String(m?.key || '').trim());
+      if (fallback?.key) setDefaultMaterialKey(String(fallback.key).toLowerCase());
+    }
+
     setTouched(true);
   };
 
   const deleteMaterial = (index) => {
-    setMaterials((prev) => prev.filter((_, i) => i !== index));
+    const deletingKey = String(materials[index]?.key || '').toLowerCase();
+    const defKey = String(defaultMaterialKey || '').toLowerCase();
+    const remaining = materials.filter((_, i) => i !== index);
+
+    setMaterials((prev) => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((_, i) => i !== index);
+    });
+
+    if (materials.length > 1 && deletingKey && deletingKey === defKey) {
+      const nextDefault =
+        remaining.find((m) => m?.enabled && String(m?.key || '').trim())?.key ||
+        remaining.find((m) => String(m?.key || '').trim())?.key ||
+        'pla';
+      setDefaultMaterialKey(String(nextDefault).toLowerCase());
+    }
     setTouched(true);
   };
 
+  const setColorDraft = (materialId, fieldOrPatch, maybeValue) => {
+    // Support both: setColorDraft(id, { name, hex }) and setColorDraft(id, 'name', value)
+    const patch =
+      typeof fieldOrPatch === 'string'
+        ? { [fieldOrPatch]: maybeValue }
+        : fieldOrPatch && typeof fieldOrPatch === 'object'
+          ? fieldOrPatch
+          : {};
+    setColorDrafts((prev) => {
+      const current = prev[materialId] || { name: '', hex: '#FFFFFF' };
+      return { ...prev, [materialId]: { ...current, ...patch } };
+    });
+  };
+
+  const addColorToMaterial = (materialIndex) => {
+    const mat = materials[materialIndex];
+    if (!mat) return;
+    const draft = colorDrafts[mat.id] || { name: '', hex: '#FFFFFF' };
+    const name = String(draft.name || '').trim();
+    const hex = normalizeHex(draft.hex);
+    if (!name || !isValidHex(hex)) {
+      setBanner({
+        type: 'error',
+        text: language === 'cs' ? 'Barva musí mít název a platný HEX (#RRGGBB).' : 'Color must have a name and valid HEX (#RRGGBB).',
+      });
+      return;
+    }
+
+    setMaterials((prev) =>
+      prev.map((m, i) => {
+        if (i !== materialIndex) return m;
+        const colors = Array.isArray(m.colors) ? m.colors : [];
+        return {
+          ...m,
+          colors: [...colors, { id: createStableId('clr'), name, hex }],
+        };
+      })
+    );
+
+    setColorDrafts((prev) => ({ ...prev, [mat.id]: { name: '', hex: '#FFFFFF' } }));
+    setTouched(true);
+  };
+
+  const updateColorInMaterial = (materialIndex, colorId, field, value) => {
+    setMaterials((prev) =>
+      prev.map((m, i) => {
+        if (i !== materialIndex) return m;
+        const colors = Array.isArray(m.colors) ? m.colors : [];
+        return {
+          ...m,
+          colors: colors.map((c) => {
+            if (c.id !== colorId) return c;
+            if (field === 'hex') return { ...c, hex: normalizeHex(value) };
+            if (field === 'name') return { ...c, name: value };
+            return { ...c, [field]: value };
+          }),
+        };
+      })
+    );
+    setTouched(true);
+  };
+
+  const deleteColorFromMaterial = (materialIndex, colorId) => {
+    setMaterials((prev) =>
+      prev.map((m, i) => {
+        if (i !== materialIndex) return m;
+        const colors = Array.isArray(m.colors) ? m.colors : [];
+        return { ...m, colors: colors.filter((c) => c.id !== colorId) };
+      })
+    );
+    setTouched(true);
+  };
+
+  // Backwards-friendly aliases for JSX handlers
+  const addMaterialColor = addColorToMaterial;
+  const updateMaterialColor = updateColorInMaterial;
+  const deleteMaterialColor = deleteColorFromMaterial;
+
   const currentConfigFull = useMemo(() => {
-    const materialPrices = buildMaterialPrices(materials);
-    // keep compatibility naming for later backend part:
+    const normalizedMaterials = ensureAtLeastOneMaterial(materials).map((m) => ({
+      ...m,
+      key: String(m.key || '').toLowerCase(),
+      price_per_gram: clampMin0(m.price_per_gram),
+      colors: Array.isArray(m.colors)
+        ? m.colors.map((c) => ({
+            id: c.id,
+            name: String(c.name || '').trim(),
+            hex: normalizeHex(c.hex),
+          }))
+        : [],
+    }));
+
+    const materialPrices = buildMaterialPrices(normalizedMaterials);
+
+    const validKeys = new Set(normalizedMaterials.map((m) => String(m?.key || '').toLowerCase()).filter(Boolean));
+    let defKey = String(defaultMaterialKey || '').toLowerCase();
+    if (!defKey || !validKeys.has(defKey)) {
+      defKey =
+        normalizedMaterials.find((m) => m?.enabled && String(m?.key || '').trim())?.key ||
+        normalizedMaterials.find((m) => String(m?.key || '').trim())?.key ||
+        'pla';
+    }
+
     return {
+      // Source of truth (V3)
+      materials: normalizedMaterials,
+
+      // Default material key
+      default_material_key: defKey,
+
+      // Compatibility derived map
       materialPrices,
+
+      // Keep legacy compatibility fields used by other parts of the demo
       timeRate: clampMin0(rules.rate_per_hour),
       tenant_pricing: { ...rules },
-      // optional helper for future:
+
       updated_at: new Date().toISOString(),
     };
-  }, [materials, rules]);
+  }, [materials, rules, defaultMaterialKey]);
 
   const dirty = useMemo(() => {
     if (!savedSnapshot) return touched;
@@ -308,6 +547,67 @@ const AdminPricing = () => {
       return touched;
     }
   }, [savedSnapshot, currentConfigFull, touched]);
+
+  const materialIssues = useMemo(() => {
+    const mats = Array.isArray(materials) ? materials : [];
+    const keyCounts = {};
+    mats.forEach((m) => {
+      const k = String(m?.key || '').toLowerCase();
+      if (!k) return;
+      keyCounts[k] = (keyCounts[k] || 0) + 1;
+    });
+
+    const byMaterialId = {};
+    let hasAny = false;
+
+    mats.forEach((m) => {
+      const id = m?.id;
+      if (!id) return;
+      const name = String(m?.name || '').trim();
+      const key = String(m?.key || '').trim();
+      const keyLower = key.toLowerCase();
+      const colors = Array.isArray(m?.colors) ? m.colors : [];
+
+      const issues = {
+        nameMissing: !name,
+        keyMissing: !key,
+        keyInvalid: !!key && !isValidMaterialKey(keyLower),
+        keyDuplicate: !!key && (keyCounts[keyLower] || 0) > 1,
+        priceInvalid: safeNum(m?.price_per_gram, 0) < 0,
+        colors: {}, // { [colorId]: { nameMissing, hexInvalid } }
+      };
+
+      colors.forEach((c) => {
+        const cid = c?.id;
+        if (!cid) return;
+        const cname = String(c?.name || '').trim();
+        const chex = String(c?.hex || '').trim();
+        issues.colors[cid] = {
+          nameMissing: !cname,
+          hexInvalid: !isValidHex(chex),
+        };
+      });
+
+      const hasColorIssue = Object.values(issues.colors).some((x) => x.nameMissing || x.hexInvalid);
+      const hasMaterialIssue =
+        issues.nameMissing ||
+        issues.keyMissing ||
+        issues.keyInvalid ||
+        issues.keyDuplicate ||
+        issues.priceInvalid ||
+        hasColorIssue;
+
+      if (hasMaterialIssue) hasAny = true;
+      byMaterialId[id] = issues;
+    });
+
+    // Must always have at least one material
+    if (mats.length === 0) {
+      hasAny = true;
+    }
+
+    return { byMaterialId, hasAny };
+  }, [materials]);
 
   const validationErrors = useMemo(() => {
     const errs = [];
@@ -327,29 +627,17 @@ const AdminPricing = () => {
     if (!['nearest', 'up'].includes(rules.rounding_mode)) errs.push('rounding_mode');
     if (!['flat', 'percent', 'min_flat'].includes(rules.markup_mode)) errs.push('markup_mode');
 
+    // Materials + colors
+    if (materialIssues.hasAny) errs.push('materials');
+
     return errs;
-  }, [rules]);
+  }, [rules, materialIssues]);
 
   const isValid = validationErrors.length === 0;
 
   const previewResult = useMemo(() => {
     return calcPricingPreview(rules, preview);
   }, [rules, preview]);
-
-  const tryLoadFromLocalStorage = () => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      return parsed;
-    } catch {
-      return null;
-    }
-  };
-
-  const saveToLocalStorage = (configFull) => {
-    localStorage.setItem(storageKey, JSON.stringify(configFull));
-  };
 
   const handleResetDefaults = () => {
     // Keep materials as-is (often already configured), reset advanced rules + preview.
@@ -387,12 +675,72 @@ const AdminPricing = () => {
     try {
       const parsed = JSON.parse(raw);
 
-      // accept both new and older shapes
+      // Accept both new and older shapes.
+      // Preferred V3: { materials[], tenant_pricing, ... }
+      // Legacy: { materialPrices: {key: pricePerGram}, timeRate, tenant_pricing }
+      const maybeMaterials = Array.isArray(parsed.materials)
+        ? parsed.materials
+        : Array.isArray(parsed?.config?.materials)
+          ? parsed.config.materials
+          : null;
+
       const materialPrices = parsed.materialPrices || parsed?.config?.materialPrices || {};
-      const timeRate = parsed.timeRate ?? parsed?.config?.timeRate ?? parsed?.tenant_pricing?.rate_per_hour ?? 150;
+      const timeRate =
+        parsed.timeRate ??
+        parsed?.config?.timeRate ??
+        parsed?.tenant_pricing?.rate_per_hour ??
+        DEFAULT_RULES.rate_per_hour;
       const tenantPricing = parsed.tenant_pricing || {};
 
-      setMaterials(materialPricesToArray(materialPrices));
+      let nextMaterials = [];
+      if (Array.isArray(maybeMaterials) && maybeMaterials.length > 0) {
+        nextMaterials = maybeMaterials;
+      } else {
+        nextMaterials = materialPricesToMaterialsV3(materialPrices);
+      }
+
+      // Normalize + ensure at least one material
+      nextMaterials = ensureAtLeastOneMaterial(nextMaterials).map((m) => {
+        const id = m?.id || createStableId('mat');
+        const key = slugifyMaterialKey(m?.key || m?.name || '');
+        return {
+          id,
+          key: key,
+          name: String(m?.name || '').trim(),
+          enabled: m?.enabled !== false,
+          price_per_gram: clampMin0(m?.price_per_gram ?? m?.price ?? 0),
+          colors: Array.isArray(m?.colors)
+            ? m.colors.map((c) => ({
+                id: c?.id || createStableId('clr'),
+                name: String(c?.name || '').trim(),
+                hex: normalizeHex(c?.hex),
+              }))
+            : [],
+        };
+      });
+
+      // Ensure unique keys after normalization
+      const used = new Set();
+      nextMaterials = nextMaterials.map((m) => {
+        let k = String(m.key || '').toLowerCase();
+        if (!k) k = ensureUniqueMaterialKey('material', nextMaterials, m.id);
+        if (used.has(k)) k = ensureUniqueMaterialKey(k, nextMaterials, m.id);
+        used.add(k);
+        return { ...m, key: k };
+      });
+
+      // Default material key (persisted)
+      const validKeys = new Set(nextMaterials.map((m) => String(m?.key || '').toLowerCase()).filter(Boolean));
+      let defKey = String(parsed.default_material_key ?? parsed.defaultMaterialKey ?? parsed.default_material ?? '').toLowerCase();
+      if (!defKey || !validKeys.has(defKey)) {
+        defKey =
+          nextMaterials.find((m) => m?.enabled && String(m?.key || '').trim())?.key ||
+          nextMaterials.find((m) => String(m?.key || '').trim())?.key ||
+          'pla';
+      }
+
+      setMaterials(nextMaterials);
+      setDefaultMaterialKey(String(defKey).toLowerCase());
       setRules({
         ...deepClone(DEFAULT_RULES),
         ...tenantPricing,
@@ -405,7 +753,7 @@ const AdminPricing = () => {
     }
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!isValid) {
       setBanner({ type: 'error', text: ui.invalid });
       return;
@@ -415,35 +763,16 @@ const AdminPricing = () => {
       setSaving(true);
       setBanner(null);
 
-      // Always save full config locally (demo-first)
-      saveToLocalStorage(currentConfigFull);
-
-      // Best-effort API save for existing backend compatibility (materials + timeRate only)
-      let apiOk = false;
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/admin/pricing/${customerId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            materialPrices: currentConfigFull.materialPrices,
-            timeRate: currentConfigFull.timeRate,
-            tenant_pricing: currentConfigFull.tenant_pricing,
-            updated_by: "admin-demo"
-          }),
-        });
-        apiOk = response.ok;
-      } catch {
-        apiOk = false;
-      }
+      // Single source of truth: tenant-scoped V3 storage
+      savePricingConfigV3(currentConfigFull);
 
       const newSnap = JSON.stringify({ ...currentConfigFull, updated_at: undefined });
       setSavedSnapshot(newSnap);
       setTouched(false);
 
-      setBanner({
-        type: 'success',
-        text: apiOk ? ui.apiOk : ui.localOk,
-      });
+      setBanner({ type: 'success', text: ui.saveOk });
+    } catch {
+      setBanner({ type: 'error', text: ui.saveError });
     } finally {
       setSaving(false);
     }
@@ -453,87 +782,100 @@ const AdminPricing = () => {
   useEffect(() => {
     let isMounted = true;
 
-    const load = async () => {
+    const normalizeLoadedConfig = (raw) => {
+      const cfg = raw && typeof raw === 'object' ? raw : {};
+
+      // Prefer V3 materials[], fallback to legacy materialPrices
+      let mats = [];
+      if (Array.isArray(cfg.materials) && cfg.materials.length > 0) {
+        mats = cfg.materials;
+      } else if (cfg.materialPrices && typeof cfg.materialPrices === 'object') {
+        mats = materialPricesToMaterialsV3(cfg.materialPrices);
+      }
+
+      mats = ensureAtLeastOneMaterial(mats).map((m) => {
+        const id = m?.id || createStableId('mat');
+        const key = slugifyMaterialKey(m?.key || m?.name || '');
+        return {
+          id,
+          key,
+          name: String(m?.name || '').trim(),
+          enabled: m?.enabled !== false,
+          price_per_gram: clampMin0(m?.price_per_gram ?? m?.price ?? 0),
+          colors: Array.isArray(m?.colors)
+            ? m.colors.map((c) => ({
+                id: c?.id || createStableId('clr'),
+                name: String(c?.name || '').trim(),
+                hex: normalizeHex(c?.hex),
+              }))
+            : [],
+        };
+      });
+
+      // Unique keys
+      const keyCounts = {};
+      mats.forEach((m) => {
+        const k = String(m.key || '').toLowerCase();
+        if (!k) return;
+        keyCounts[k] = (keyCounts[k] || 0) + 1;
+      });
+      mats = mats.map((m) => {
+        let k = String(m.key || '').toLowerCase();
+        if (!k) k = ensureUniqueMaterialKey('material', mats, m.id);
+        if ((keyCounts[k] || 0) > 1) k = ensureUniqueMaterialKey(k, mats, m.id);
+        return { ...m, key: k };
+      });
+
+      // Default material key (persisted)
+      const validKeys = new Set(mats.map((m) => String(m?.key || '').toLowerCase()).filter(Boolean));
+      let defKey = String(cfg.default_material_key ?? cfg.defaultMaterialKey ?? cfg.default_material ?? '').toLowerCase();
+      if (!defKey || !validKeys.has(defKey)) {
+        defKey =
+          mats.find((m) => m?.enabled && String(m?.key || '').trim())?.key ||
+          mats.find((m) => String(m?.key || '').trim())?.key ||
+          'pla';
+      }
+
+      const tenantPricing = cfg.tenant_pricing || {};
+      const timeRate = cfg.timeRate ?? tenantPricing.rate_per_hour ?? DEFAULT_RULES.rate_per_hour;
+
+      const nextRules = {
+        ...deepClone(DEFAULT_RULES),
+        ...tenantPricing,
+        rate_per_hour: clampMin0(tenantPricing.rate_per_hour ?? timeRate),
+      };
+
+      const normalized = {
+        ...cfg,
+        materials: mats,
+        default_material_key: defKey,
+        materialPrices: buildMaterialPrices(mats),
+        timeRate: clampMin0(nextRules.rate_per_hour),
+        tenant_pricing: { ...nextRules },
+        updated_at: new Date().toISOString(),
+      };
+
+      return { mats, nextRules, normalized, defKey };
+    };
+
+    const load = () => {
       setLoading(true);
       setBanner(null);
 
-      // 1) Prefer localStorage (demo)
-      const local = tryLoadFromLocalStorage();
-      if (local?.materialPrices || local?.tenant_pricing) {
-        if (!isMounted) return;
+      const loaded = loadPricingConfigV3();
+      const { mats, nextRules, normalized, defKey } = normalizeLoadedConfig(loaded);
 
-        const materialPrices = local.materialPrices || {};
-        const tenantPricing = local.tenant_pricing || {};
-        const timeRate = local.timeRate ?? tenantPricing.rate_per_hour ?? 150;
+      if (!isMounted) return;
+      setMaterials(mats);
+      setRules(nextRules);
+      setDefaultMaterialKey(String(defKey || 'pla').toLowerCase());
+      setPreview(deepClone(DEFAULT_PREVIEW));
+      setSavedSnapshot(JSON.stringify({ ...normalized, updated_at: undefined }));
+      setTouched(false);
+      setLoading(false);
 
-        setMaterials(materialPricesToArray(materialPrices));
-        setRules({
-          ...deepClone(DEFAULT_RULES),
-          ...tenantPricing,
-          rate_per_hour: clampMin0(tenantPricing.rate_per_hour ?? timeRate),
-        });
-
-        const snap = JSON.stringify({ ...local, updated_at: undefined });
-        setSavedSnapshot(snap);
-        setTouched(false);
-        setLoading(false);
-        return;
-      }
-
-      // 2) Fallback to API (older config)
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/admin/pricing/${customerId}`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const config = await response.json();
-
-        if (!isMounted) return;
-
-        const { materialPrices, timeRate, tenant_pricing } = config;
-        setMaterials(materialPricesToArray(materialPrices || {}));
-        setRules({
-          ...deepClone(DEFAULT_RULES),
-          ...(tenant_pricing || {}),
-          rate_per_hour: clampMin0((tenant_pricing?.rate_per_hour ?? timeRate) ?? DEFAULT_RULES.rate_per_hour),
-        });
-
-        const full = {
-          materialPrices: materialPrices || {},
-          timeRate: clampMin0(timeRate ?? DEFAULT_RULES.rate_per_hour),
-          tenant_pricing: {
-          ...deepClone(DEFAULT_RULES),
-          ...(tenant_pricing || {}),
-          rate_per_hour: clampMin0((tenant_pricing?.rate_per_hour ?? timeRate) ?? DEFAULT_RULES.rate_per_hour),
-        },
-          updated_at: new Date().toISOString(),
-        };
-
-        // Store merged default to local for demo
-        saveToLocalStorage(full);
-        setSavedSnapshot(JSON.stringify({ ...full, updated_at: undefined }));
-        setTouched(false);
-        setLoading(false);
-      } catch (error) {
-        if (!isMounted) return;
-        // Offline demo mode
-        setMaterials([]);
-        setRules(deepClone(DEFAULT_RULES));
-        setPreview(deepClone(DEFAULT_PREVIEW));
-        setBanner({ type: 'info', text: ui.offlineInfo });
-        // IMPORTANT:
-        // When API is unreachable we run in offline demo mode.
-        // Do NOT reference `tenant_pricing` / `timeRate` from the API branch here,
-        // because they are undefined in this scope and would crash the page.
-        const full = {
-          materialPrices: {},
-          timeRate: DEFAULT_RULES.rate_per_hour,
-          tenant_pricing: deepClone(DEFAULT_RULES),
-          updated_at: new Date().toISOString(),
-        };
-        saveToLocalStorage(full);
-        setSavedSnapshot(JSON.stringify({ ...full, updated_at: undefined }));
-        setTouched(false);
-        setLoading(false);
-      }
+      // Ensure config exists (default material if needed)
+      savePricingConfigV3(normalized);
     };
 
     load();
@@ -541,8 +883,7 @@ const AdminPricing = () => {
     return () => {
       isMounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId]);
+  }, []);
 
   // Helper: material dropdown for preview
   const enabledMaterials = useMemo(() => {
@@ -552,7 +893,7 @@ const AdminPricing = () => {
   const setPreviewFromMaterial = (materialIndex) => {
     const mat = enabledMaterials[materialIndex];
     if (!mat) return;
-    setPreviewField('material_price_per_g', clampMin0(mat.price));
+    setPreviewField('material_price_per_g', clampMin0(mat.price_per_gram));
   };
 
   const ToggleRow = ({ checked, onChange, label, hint }) => {
@@ -669,19 +1010,95 @@ const AdminPricing = () => {
               </div>
             ) : (
               <div className="materials-grid">
-                {materials.map((material, index) => (
-                  <div key={material.id} className="material-card">
-                    <div className="material-header">
-                      <input
-                        className="material-name"
-                        placeholder={language === 'cs' ? 'Název materiálu (např. PLA, ABS)' : 'Material name (e.g. PLA, ABS)'}
-                        value={material.name}
-                        onChange={(e) => updateMaterial(index, 'name', e.target.value)}
-                      />
-                      <button className="icon-btn" onClick={() => deleteMaterial(index)} title={language === 'cs' ? 'Smazat materiál' : 'Delete material'}>
-                        <Icon name="Trash2" size={16} />
-                      </button>
-                    </div>
+                {materials.map((material, index) => {
+                  const issues = materialIssues.byMaterialId?.[material.id] || {};
+                  const canDelete = materials.length > 1;
+                  const keyError = issues.keyMissing || issues.keyInvalid || issues.keyDuplicate;
+                  const nameError = issues.nameMissing;
+                  const priceError = issues.priceInvalid;
+                  const draft = colorDrafts?.[material.id] || { name: '', hex: '#FFFFFF' };
+                  const matKeyLower = String(material.key || '').toLowerCase();
+                  const isDefault = !!matKeyLower && matKeyLower === String(defaultMaterialKey || '').toLowerCase();
+                  const canSetDefault = !!matKeyLower && !keyError && material.enabled !== false;
+
+                  return (
+                    <div key={material.id} className="material-card">
+                      <div className="material-header">
+                        <input
+                          className={`material-name ${nameError ? 'input-error' : ''}`}
+                          placeholder={language === 'cs' ? 'Název materiálu (např. PLA, ABS)' : 'Material name (e.g. PLA, ABS)'}
+                          value={material.name}
+                          onChange={(e) => updateMaterial(index, 'name', e.target.value)}
+                        />
+                        <div className="material-actions">
+                          <label
+                            className={`default-radio ${isDefault ? 'is-default' : ''}`}
+                            title={
+                              !canSetDefault
+                                ? (language === 'cs'
+                                    ? 'Výchozí materiál musí být aktivní a mít validní klíč.'
+                                    : 'Default material must be enabled and have a valid key.')
+                                : (language === 'cs' ? 'Nastavit jako výchozí materiál' : 'Set as default material')
+                            }
+                          >
+                            <input
+                              type="radio"
+                              name="default-material"
+                              checked={isDefault}
+                              disabled={!canSetDefault}
+                              onChange={() => {
+                                setDefaultMaterialKey(matKeyLower);
+                                setTouched(true);
+                              }}
+                            />
+                            <span>{language === 'cs' ? 'Výchozí' : 'Default'}</span>
+                          </label>
+
+                          <button
+                            className="icon-btn"
+                            onClick={() => deleteMaterial(index)}
+                            disabled={!canDelete}
+                            title={
+                              !canDelete
+                                ? (language === 'cs' ? 'Nelze smazat poslední materiál' : 'You cannot delete the last material')
+                                : (language === 'cs' ? 'Smazat materiál' : 'Delete material')
+                            }
+                          >
+                            <Icon name="Trash2" size={16} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {nameError ? (
+                        <div className="field-error">{language === 'cs' ? 'Název je povinný' : 'Name is required'}</div>
+                      ) : null}
+
+                      <div className="field">
+                        <label>{language === 'cs' ? 'Klíč (slug)' : 'Key (slug)'}</label>
+                        <input
+                          className={`input ${keyError ? 'input-error' : ''}`}
+                          placeholder={language === 'cs' ? 'např. pla, petg_carbon' : 'e.g. pla, petg_carbon'}
+                          value={material.key || ''}
+                          onChange={(e) => updateMaterial(index, 'key', e.target.value)}
+                        />
+                        {issues.keyMissing ? (
+                          <div className="field-error">{language === 'cs' ? 'Klíč je povinný' : 'Key is required'}</div>
+                        ) : issues.keyInvalid ? (
+                          <div className="field-error">
+                            {language === 'cs'
+                              ? 'Klíč musí obsahovat jen a-z, 0-9 a podtržítka.'
+                              : 'Key may contain only a-z, 0-9 and underscores.'}
+                          </div>
+                        ) : issues.keyDuplicate ? (
+                          <div className="field-error">{language === 'cs' ? 'Klíč musí být unikátní' : 'Key must be unique'}</div>
+                        ) : (
+                          <p className="help-text">
+                            {language === 'cs'
+                              ? 'Klíč se používá v kalkulaci a nemění se automaticky při přejmenování.'
+                              : "Key is used for calculation and won't change automatically when renaming."}
+                          </p>
+                        )}
+                      </div>
 
                     <label className="toggle">
                       <input
@@ -698,16 +1115,116 @@ const AdminPricing = () => {
                         <input
                           type="number"
                           min="0"
-                          className={`input ${material.price < 0 ? 'input-error' : ''}`}
-                          value={material.price}
-                          onChange={(e) => updateMaterial(index, 'price', safeNum(e.target.value, 0))}
+                          className={`input ${priceError ? 'input-error' : ''}`}
+                          value={material.price_per_gram}
+                          onChange={(e) => updateMaterial(index, 'price_per_gram', safeNum(e.target.value, 0))}
                         />
                         <span className="unit">Kč/g</span>
                       </div>
-                      <FieldError show={material.price < 0} />
+                      <FieldError show={priceError} />
+                    </div>
+
+                    <div className="divider" />
+
+                    <div className="colors-section">
+                      <div className="colors-title">{language === 'cs' ? 'Barvy materiálu' : 'Material colors'}</div>
+
+                      {Array.isArray(material.colors) && material.colors.length > 0 ? (
+                        <div className="colors-list">
+                          {material.colors.map((c) => {
+                            const cIssues = issues.colors?.[c.id] || {};
+                            const hexVal = c.hex || '#FFFFFF';
+                            return (
+                              <div key={c.id} className="color-row">
+                                <input
+                                  className={`input ${cIssues.nameMissing ? 'input-error' : ''}`}
+                                  placeholder={language === 'cs' ? 'Název barvy' : 'Color name'}
+                                  value={c.name || ''}
+                                  onChange={(e) => updateMaterialColor(index, c.id, 'name', e.target.value)}
+                                />
+                                <input
+                                  type="color"
+                                  className="color-picker"
+                                  value={isValidHex(hexVal) ? hexVal : '#FFFFFF'}
+                                  onChange={(e) => updateMaterialColor(index, c.id, 'hex', e.target.value)}
+                                />
+                                <input
+                                  className={`input mono ${cIssues.hexInvalid ? 'input-error' : ''}`}
+                                  placeholder="#RRGGBB"
+                                  value={c.hex || ''}
+                                  onChange={(e) => updateMaterialColor(index, c.id, 'hex', e.target.value)}
+                                />
+                                <button
+                                  className="icon-btn"
+                                  onClick={() => deleteMaterialColor(index, c.id)}
+                                  title={language === 'cs' ? 'Smazat barvu' : 'Delete color'}
+                                >
+                                  <Icon name="Trash2" size={16} />
+                                </button>
+
+                                {cIssues.nameMissing || cIssues.hexInvalid ? (
+                                  <div className="color-row-errors">
+                                    {cIssues.nameMissing ? (
+                                      <span>{language === 'cs' ? 'Název povinný' : 'Name required'}</span>
+                                    ) : null}
+                                    {cIssues.hexInvalid ? (
+                                      <span>{language === 'cs' ? 'Hex neplatný' : 'Invalid hex'}</span>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="help-text">
+                          {language === 'cs'
+                            ? 'Zatím nejsou definované žádné barvy. Přidej první barvu níže.'
+                            : 'No colors defined yet. Add your first color below.'}
+                        </p>
+                      )}
+
+                      <div className="color-add">
+                        <div className="muted" style={{ marginBottom: 8 }}>
+                          {language === 'cs' ? 'Přidat novou barvu:' : 'Add a new color:'}
+                        </div>
+                        <div className="color-add-row">
+                          <input
+                            className={`input ${draft?.name?.trim() ? '' : 'input-error'}`}
+                            placeholder={language === 'cs' ? 'Název nové barvy' : 'New color name'}
+                            value={draft.name}
+                            onChange={(e) => setColorDraft(material.id, 'name', e.target.value)}
+                          />
+                          <input
+                            type="color"
+                            className="color-picker"
+                            value={isValidHex(draft.hex) ? draft.hex : '#FFFFFF'}
+                            onChange={(e) => setColorDraft(material.id, 'hex', normalizeHex(e.target.value))}
+                          />
+                          <input
+                            className={`input mono ${draft.hex && !isValidHex(draft.hex) ? 'input-error' : ''}`}
+                            placeholder="#RRGGBB"
+                            value={draft.hex}
+                            onChange={(e) => setColorDraft(material.id, 'hex', normalizeHex(e.target.value))}
+                          />
+                          <button
+                            className="btn-secondary"
+                            onClick={() => addMaterialColor(index)}
+                            disabled={!draft?.name?.trim() || !isValidHex(draft.hex)}
+                          >
+                            <Icon name="Plus" size={18} />
+                            {language === 'cs' ? 'Přidat' : 'Add'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {draft.name && draft.hex && !isValidHex(draft.hex) ? (
+                        <div className="field-error">{language === 'cs' ? 'Hex musí být ve formátu #RRGGBB' : 'Hex must be in #RRGGBB format'}</div>
+                      ) : null}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1517,6 +2034,99 @@ const AdminPricing = () => {
         .icon-btn:hover {
           background: rgba(0, 0, 0, 0.05);
           color: #333;
+        }
+
+        .material-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .default-radio {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border: 1px solid #e6e6e6;
+          border-radius: 999px;
+          padding: 6px 10px;
+          background: #fff;
+          color: #444;
+          font-size: 12px;
+          cursor: pointer;
+          user-select: none;
+        }
+
+        .default-radio input {
+          margin: 0;
+        }
+
+        .default-radio.is-default {
+          border-color: #d7e7ff;
+          background: #f2f7ff;
+          color: #1557b0;
+        }
+
+        .default-radio input:disabled {
+          cursor: not-allowed;
+        }
+
+        .default-radio input:disabled + span {
+          opacity: 0.7;
+        }
+
+        .mono {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+        }
+
+        .colors-section {
+          margin-top: 12px;
+          padding-top: 12px;
+          border-top: 1px dashed #e6e6e6;
+        }
+
+        .colors-title {
+          font-size: 13px;
+          font-weight: 600;
+          color: #333;
+          margin-bottom: 8px;
+        }
+
+        .color-row {
+          display: grid;
+          grid-template-columns: 1fr 44px 120px auto;
+          gap: 8px;
+          align-items: center;
+          margin-bottom: 8px;
+        }
+
+        .color-add {
+          border: 1px solid #eee;
+          border-radius: 8px;
+          background: #fff;
+          padding: 10px;
+          margin-top: 10px;
+        }
+
+        .color-add-row {
+          display: grid;
+          grid-template-columns: 1fr 44px 120px auto;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .color-picker {
+          width: 44px;
+          height: 36px;
+          padding: 0;
+          border: 1px solid #ddd;
+          border-radius: 8px;
+          background: #fff;
+          cursor: pointer;
+        }
+
+        .color-row-errors {
+          margin-top: -6px;
+          margin-bottom: 8px;
         }
 
         .field {

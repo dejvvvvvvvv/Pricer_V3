@@ -1,225 +1,476 @@
-import React from 'react';
-import Icon from '../../../components/AppIcon';
-import { BarLoader } from 'react-spinners';
-import GenerateButton from './GenerateButton';
+import React, { useMemo, useState } from 'react';
+import { Button } from '../../../components/ui/Button';
+import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/Card';
+import Icon from '../../../components/ui/Icon';
+import { calculateOrderQuote } from '../../../lib/pricing/pricingEngineV3';
 
-// --- Demo pricing constants (orientačně) ---
-const PRICE_PER_HOUR = 75; // CZK / hour
-const PRICE_PER_GRAM_PLA = 2.0; // CZK / gram
-
-const fmt = (n, d = 2) => (Number.isFinite(n) ? n.toFixed(d) : '-');
-
-const formatHMS = (totalSeconds) => {
-  const s = Math.max(0, Math.floor(Number(totalSeconds) || 0));
-  const hh = String(Math.floor(s / 3600)).padStart(2, '0');
-  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
-  const ss = String(s % 60).padStart(2, '0');
-  return `${hh}:${mm}:${ss}`;
-};
-
-const formatCzk = (value) => {
-  const n = Number(value) || 0;
-  return `${Math.round(n).toLocaleString('cs-CZ')} Kč`;
-};
-
-const ellipsizePath = (p) => {
-  if (!p || typeof p !== 'string') return '-';
-  if (p.length <= 42) return p;
-  return `${p.slice(0, 18)}…${p.slice(-18)}`;
-};
-
-const PricingCalculator = ({
-  selectedFile,
-  onSlice,
-  totalModels = 0,
-  onSliceAll,
-  sliceAllLoading = false,
-}) => {
-
-  // --- Initial State: No file selected ---
-  if (!selectedFile) {
-    return (
-      <div className="bg-card border border-border rounded-xl p-8 text-center">
-        <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-          <Icon name="Calculator" size={24} className="text-muted-foreground" />
-        </div>
-        <h3 className="text-lg font-semibold text-foreground mb-2">Kalkulace ceny</h3>
-        <p className="text-sm text-muted-foreground">
-          Vyberte nahraný model pro zobrazení detailů a ceny tisku.
-        </p>
-      </div>
-    );
+function formatCzk(amount) {
+  const n = Number.isFinite(amount) ? amount : 0;
+  try {
+    return new Intl.NumberFormat('cs-CZ', {
+      style: 'currency',
+      currency: 'CZK',
+      maximumFractionDigits: 2,
+    }).format(n);
+  } catch {
+    return `${n.toFixed(2)} Kč`;
   }
+}
 
-  const { status, result, error } = selectedFile;
+function formatSignedCzk(amount) {
+  const n = Number.isFinite(amount) ? amount : 0;
+  const s = formatCzk(Math.abs(n));
+  return n < 0 ? `- ${s}` : `+ ${s}`;
+}
 
-  const showSliceAll = typeof onSliceAll === 'function' && Number(totalModels) > 1;
+function formatPct(value) {
+  const n = Number.isFinite(value) ? value : 0;
+  const sign = n < 0 ? '-' : '+';
+  return `${sign} ${Math.abs(n)} %`;
+}
 
-  // --- Loading State: Pending or Processing ---
-  if (status === 'processing') {
-    return (
-      <div className="bg-card border border-border rounded-xl p-8 text-center">
-        <Icon name="Loader" size={24} className="text-primary mx-auto mb-4 animate-spin" />
-        <h3 className="text-lg font-semibold text-foreground mb-2">Probíhá slicování…</h3>
-        <p className="text-sm text-muted-foreground mb-6">Zpracovávám váš model. To může trvat několik sekund.</p>
-        <BarLoader color="hsl(var(--primary))" width="100%" />
-      </div>
-    );
-  }
+function formatFeeLabel(fee) {
+  if (!fee) return '';
+  const v = Number(fee.value);
+  const type = String(fee.type || '');
+  if (type === 'percent') return formatPct(v);
 
-  // --- Error State: Slicing Failed ---
-  if (status === 'failed') {
-    return (
-      <div className="bg-destructive/10 border border-destructive/20 rounded-xl p-8 text-center">
-        <Icon name="XCircle" size={24} className="text-destructive mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-destructive mb-2">Výpočet se nezdařil</h3>
-        <p className="text-sm text-destructive/80 mb-6">{error || "Došlo k neznámé chybě."}</p>
-        {typeof onSlice === 'function' && (
-          <div className="mt-2 flex flex-wrap items-center justify-center gap-3">
-            <GenerateButton size="compact"
-                        label="Spočítat cenu" onClick={onSlice} />
-            {showSliceAll && (
-              <GenerateButton size="compact"
-                                        label="Spočítat vše"
-                onClick={onSliceAll}
-                loading={sliceAllLoading}
-                disabled={sliceAllLoading}
-              />
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
+  const signed = (x) => (Number.isFinite(x) ? (x < 0 ? '-' : '+') : '+');
+  const s = signed(v);
+  const abs = Math.abs(Number.isFinite(v) ? v : 0);
 
-  // --- Pending state: show CTA to run slicing ---
-  if (status === 'pending') {
-    return (
-      <div className="bg-card border border-border rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-2">Metriky ze sliceru</h3>
-        <p className="text-sm text-muted-foreground mb-6">Zdroj: backend-local (/api/slice) + PrusaSlicer CLI</p>
+  if (type === 'flat') return `${s} ${formatCzk(abs)}`;
+  if (type === 'per_gram') return `${s} ${abs} Kč/g`;
+  if (type === 'per_minute') return `${s} ${abs} Kč/min`;
+  if (type === 'per_cm3') return `${s} ${abs} Kč/cm³`;
+  if (type === 'per_cm2') return `${s} ${abs} Kč/cm²`;
+  if (type === 'per_piece') return `${s} ${formatCzk(abs)} / kus`;
+  return `${s} ${abs}`;
+}
 
-        <div className="bg-muted/40 border border-border rounded-lg p-4 text-sm text-muted-foreground">
-          Klikni na <strong>Spočítat cenu</strong> pro odeslání modelu na lokální backend.
-        </div>
-
-        {typeof onSlice === 'function' && (
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <GenerateButton size="compact"
-                        label="Spočítat cenu" onClick={onSlice} />
-            {showSliceAll && (
-              <GenerateButton size="compact"
-                                        label="Spočítat vše"
-                onClick={onSliceAll}
-                loading={sliceAllLoading}
-                disabled={sliceAllLoading}
-              />
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // --- Success State: slicing completed ---
-  if (status === 'completed' && result) {
-    const metrics = result.metrics || {};
-    const modelInfo = result.modelInfo || {};
-    const sizeMm = modelInfo.sizeMm || {};
-
-    const t = Number(metrics.estimatedTimeSeconds) || 0;
-    const grams = Number(metrics.filamentGrams) || 0;
-    const mm = Number(metrics.filamentMm) || 0;
-    const volMm3 = Number(modelInfo.volumeMm3) || 0;
-    const volCm3 = volMm3 ? (volMm3 / 1000) : 0;
-
-    const materialCost = grams * PRICE_PER_GRAM_PLA;
-    const printingCost = (t / 3600) * PRICE_PER_HOUR;
-    const total = materialCost + printingCost;
-
-    return (
-      <div className="bg-card border border-border rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-foreground mb-1">Metriky ze sliceru</h3>
-        <p className="text-sm text-muted-foreground mb-6">Zdroj: backend-local (/api/slice) + PrusaSlicer CLI</p>
-
-        <div className="space-y-3 text-sm">
-          <div className="flex justify-between items-center">
-            <span className="text-muted-foreground flex items-center"><Icon name="Clock" className="mr-2" size={14}/>Odhadovaný čas tisku</span>
-            <span className="font-semibold text-foreground tabular-nums">{t ? formatHMS(t) : '-'}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-muted-foreground flex items-center"><Icon name="Database" className="mr-2" size={14}/>Filament</span>
-            <span className="font-semibold text-foreground tabular-nums">{grams ? `${grams.toFixed(1)} g` : '-'}{mm ? ` (${Math.round(mm)} mm)` : ''}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-muted-foreground flex items-center"><Icon name="Ruler" className="mr-2" size={14}/>Rozměry (X/Y/Z)</span>
-            <span className="font-semibold text-foreground tabular-nums">{Number.isFinite(sizeMm.x) ? `${fmt(sizeMm.x, 2)} × ${fmt(sizeMm.y, 2)} × ${fmt(sizeMm.z, 2)} mm` : '-'}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-muted-foreground flex items-center"><Icon name="HelpCircle" className="mr-2" size={14}/>Objem</span>
-            <span className="font-semibold text-foreground tabular-nums">{volCm3 ? `${volCm3.toFixed(2)} cm³` : '-'}</span>
-          </div>
-        </div>
-
-        <div className="border-t border-border my-6" />
-
-        <div className="space-y-2 text-xs">
-          <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
-            <span className="text-muted-foreground">Job ID</span>
-            <span className="font-mono text-foreground truncate" title={result.jobId || ''}>{result.jobId || '-'}</span>
-          </div>
-          <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
-            <span className="text-muted-foreground">out.gcode</span>
-            <span className="font-mono text-foreground truncate" title={result.outGcodePath || ''}>{ellipsizePath(result.outGcodePath)}</span>
-          </div>
-          <div className="grid grid-cols-[90px_1fr] gap-3 items-center">
-            <span className="text-muted-foreground">jobDir</span>
-            <span className="font-mono text-foreground truncate" title={result.jobDir || ''}>{ellipsizePath(result.jobDir)}</span>
-          </div>
-        </div>
-
-        <div className="border-t border-border mt-6 pt-6">
-          <p className="text-xs text-muted-foreground mb-2">Demo cena (orientačně)</p>
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Materiál</span>
-              <span className="text-foreground">{formatCzk(materialCost)}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Čas tiskárny</span>
-              <span className="text-foreground">{formatCzk(printingCost)}</span>
-            </div>
-            <div className="flex justify-between text-sm font-semibold">
-              <span className="text-foreground">Celkem</span>
-              <span className="text-foreground">{formatCzk(total)}</span>
-            </div>
-          </div>
-
-          {typeof onSlice === 'function' && (
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-              <GenerateButton size="compact"
-                        label="Spočítat cenu" onClick={onSlice} />
-              {showSliceAll && (
-                <GenerateButton size="compact"
-                                          label="Spočítat vše"
-                  onClick={onSliceAll}
-                  loading={sliceAllLoading}
-                  disabled={sliceAllLoading}
-                />
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // --- Fallback state, should not be reached ---
+function MiniRow({ label, value, emphasize = false }) {
   return (
-    <div className="bg-card border border-border rounded-xl p-8 text-center">
-        <p className="text-sm text-muted-foreground">Nastal neočekávaný stav.</p>
+    <div className={`flex items-center justify-between gap-3 ${emphasize ? 'font-semibold' : ''}`}>
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm text-foreground">{value}</span>
     </div>
   );
-};
+}
 
-export default PricingCalculator;
+export default function PricingCalculator({
+  selectedFile,
+  onSlice,
+  totalModels,
+  onSliceAll,
+  sliceAllLoading,
+  uploadedFiles,
+  printConfigs,
+  pricingConfig,
+  feesConfig,
+  feeSelections,
+}) {
+  const [showDeveloper, setShowDeveloper] = useState(false);
+
+  const readyModels = useMemo(() => {
+    const files = Array.isArray(uploadedFiles) ? uploadedFiles : [];
+    return files.filter((f) => f?.status === 'completed' && f?.result);
+  }, [uploadedFiles]);
+
+  const incompleteModels = useMemo(() => {
+    const files = Array.isArray(uploadedFiles) ? uploadedFiles : [];
+    return files.filter((f) => !(f?.status === 'completed' && f?.result));
+  }, [uploadedFiles]);
+
+  const quoteState = useMemo(() => {
+    if (!pricingConfig) return { quote: null, error: null };
+    if (!Array.isArray(uploadedFiles) || uploadedFiles.length === 0) return { quote: null, error: null };
+    if (incompleteModels.length > 0) return { quote: null, error: null };
+
+    try {
+      const quote = calculateOrderQuote({
+        uploadedFiles,
+        printConfigs,
+        pricingConfig,
+        feesConfig,
+        feeSelections,
+      });
+      return { quote, error: null };
+    } catch (e) {
+      return { quote: null, error: e instanceof Error ? e.message : String(e) };
+    }
+  }, [pricingConfig, uploadedFiles, printConfigs, feesConfig, feeSelections, incompleteModels.length]);
+
+  const quote = quoteState.quote;
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base">Cena a souhrn</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Výpočet používá Admin Pricing + Admin Fees (tenant) a pipeline base → fees → markup → minima → rounding.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDeveloper((v) => !v)}
+              iconName="Code2"
+              iconPosition="left"
+            >
+              {showDeveloper ? 'Zákaznický' : 'Developer'}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4">
+        {/* Actions */}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onSliceAll}
+            loading={sliceAllLoading}
+            disabled={sliceAllLoading || (Array.isArray(uploadedFiles) && uploadedFiles.some((f) => f.status === 'processing'))}
+            iconName="Layers"
+            iconPosition="left"
+          >
+            Přepočítat vše
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onSlice}
+            disabled={!selectedFile || selectedFile.status === 'processing' || sliceAllLoading}
+            iconName="RefreshCw"
+            iconPosition="left"
+          >
+            Přepočítat vybraný
+          </Button>
+        </div>
+
+        {/* Readiness */}
+        {incompleteModels.length > 0 ? (
+          <div className="p-3 rounded-lg border border-border bg-muted/30">
+            <div className="flex items-start gap-2">
+              <Icon name="Info" size={16} className="mt-0.5" />
+              <div>
+                <p className="text-sm font-medium">Čekám na dokončení slicování</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Aby byla cena přesná, musí být všechny modely ve stavu <b>completed</b>.
+                  Hotovo: {readyModels.length} / {Array.isArray(uploadedFiles) ? uploadedFiles.length : totalModels}
+                </p>
+                {incompleteModels.length > 0 && (
+                  <ul className="mt-2 text-xs text-muted-foreground list-disc pl-5">
+                    {incompleteModels.slice(0, 4).map((f) => (
+                      <li key={f.id} className="truncate">
+                        {f.name} ({f.status})
+                      </li>
+                    ))}
+                    {incompleteModels.length > 4 && <li>…a další</li>}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : quoteState.error ? (
+          <div className="p-3 rounded-lg border border-destructive/30 bg-destructive/5 text-destructive">
+            <p className="text-sm font-semibold">Chyba výpočtu ceny</p>
+            <p className="text-xs mt-1 break-words">{quoteState.error}</p>
+          </div>
+        ) : null}
+
+        {/* Main totals */}
+        {quote && (
+          <div className="p-4 rounded-xl border border-border bg-background/40">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground">Celkem</p>
+                <p className="text-2xl font-bold tracking-tight">{formatCzk(quote.total)}</p>
+                {(quote.flags?.min_order_total_applied || quote.flags?.clamped_to_zero) && (
+                  <div className="mt-2 space-y-1">
+                    {quote.flags?.min_order_total_applied && (
+                      <p className="text-xs text-muted-foreground">Aplikováno minimum objednávky</p>
+                    )}
+                    {quote.flags?.clamped_to_zero && (
+                      <p className="text-xs text-muted-foreground">Sleva byla omezena, aby celkem nebylo záporné</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="min-w-[200px] space-y-2">
+                <MiniRow label="Materiál" value={formatCzk(quote.simple.material)} />
+                <MiniRow label="Čas tisku" value={formatCzk(quote.simple.time)} />
+                <MiniRow label="Služby" value={formatSignedCzk(quote.simple.services)} />
+                <MiniRow label="Sleva" value={formatSignedCzk(quote.simple.discount)} />
+                <MiniRow label="Markup" value={formatSignedCzk(quote.simple.markup)} />
+                <div className="pt-2 border-t border-border" />
+                <MiniRow label="Celkem" value={formatCzk(quote.total)} emphasize />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Simple customer breakdown */}
+        {quote && !showDeveloper && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold">Rozpis objednávky</h4>
+              <span className="text-xs text-muted-foreground">{Array.isArray(uploadedFiles) ? uploadedFiles.length : totalModels} modelů</span>
+            </div>
+
+            <div className="space-y-2">
+              {quote.models.map((m) => (
+                <div key={m.id} className="p-3 rounded-lg border border-border">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{m.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {m.quantity}× • {m.base.materialKey} • {Math.round(m.base.billedMinutes)} min
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold">{formatCzk(m.totals.subtotalAfterPerModelRounding)}</p>
+                      {m.flags?.min_price_per_model_applied && (
+                        <p className="text-xs text-muted-foreground">min. za model</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <details className="mt-2">
+                    <summary className="cursor-pointer select-none text-xs text-muted-foreground">
+                      Služby (model)
+                    </summary>
+                    <div className="mt-2 space-y-1">
+                      {m.fees
+                        .filter((f) => f.applied && (f.amount !== 0 || f.required))
+                        .map((f) => (
+                          <div key={f.id} className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <span className="text-xs font-medium truncate">{f.name}</span>
+                              {f.required && (
+                                <span className="ml-2 inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                                  V ceně
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-xs font-medium">{formatSignedCzk(f.amount)}</span>
+                          </div>
+                        ))}
+                      {m.fees.filter((f) => f.applied && (f.amount !== 0 || f.required)).length === 0 && (
+                        <p className="text-xs text-muted-foreground">Žádné služby pro tento model.</p>
+                      )}
+                    </div>
+                  </details>
+                </div>
+              ))}
+            </div>
+
+            {quote.orderFees?.some((f) => f.applied && (f.amount !== 0 || f.required)) && (
+              <div className="p-3 rounded-lg border border-border">
+                <p className="text-sm font-semibold mb-2">Poplatky (objednávka)</p>
+                <div className="space-y-1">
+                  {quote.orderFees
+                    .filter((f) => f.applied && (f.amount !== 0 || f.required))
+                    .map((f) => (
+                      <div key={f.id} className="flex items-center justify-between gap-3">
+                        <span className="text-sm">
+                          {f.name}
+                          {f.required && (
+                            <span className="ml-2 inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
+                              V ceně
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-sm font-medium">{formatSignedCzk(f.amount)}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Developer breakdown */}
+        {quote && showDeveloper && (
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg border border-border bg-muted/20">
+              <p className="text-sm font-semibold">Developer breakdown</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                U každé fee uvidíš MATCH/NO MATCH a důvody včetně vyhodnocení conditions.
+              </p>
+            </div>
+
+            <details className="p-3 rounded-lg border border-border" open>
+              <summary className="cursor-pointer select-none text-sm font-semibold">Order totals (raw)</summary>
+              <div className="mt-3 space-y-1 text-xs">
+                <MiniRow label="modelsTotal" value={formatCzk(quote.totals.modelsTotal)} />
+                <MiniRow label="orderFeesTotal" value={formatSignedCzk(quote.totals.orderFeesTotal)} />
+                <MiniRow label="subtotalBeforeMarkup" value={formatCzk(quote.totals.subtotalBeforeMarkup)} />
+                <MiniRow label="markupAmount" value={formatSignedCzk(quote.totals.markupAmount)} />
+                <MiniRow label="totalAfterMarkup" value={formatCzk(quote.totals.totalAfterMarkup)} />
+                <MiniRow label="totalRounded" value={formatCzk(quote.totals.totalRounded)} />
+              </div>
+            </details>
+
+            <details className="p-3 rounded-lg border border-border" open>
+              <summary className="cursor-pointer select-none text-sm font-semibold">Model breakdown</summary>
+              <div className="mt-3 space-y-3">
+                {quote.models.map((m) => (
+                  <details key={m.id} className="p-3 rounded-lg border border-border" open={false}>
+                    <summary className="cursor-pointer select-none flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate">{m.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {m.status} • {m.quantity}× • {m.base.materialKey} • {Math.round(m.base.billedMinutes)} min
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-bold">{formatCzk(m.totals.subtotalAfterPerModelRounding)}</p>
+                      </div>
+                    </summary>
+
+                    <div className="mt-3 grid grid-cols-1 gap-3">
+                      <div className="p-3 rounded-lg border border-border bg-background/40">
+                        <p className="text-xs font-semibold mb-2">Base</p>
+                        <div className="space-y-1 text-xs">
+                          <MiniRow label="filamentGrams" value={`${m.base.filamentGrams.toFixed(2)} g`} />
+                          <MiniRow label="estimatedTimeSeconds" value={`${Math.round(m.base.estimatedTimeSeconds)} s`} />
+                          <MiniRow label="billedMinutes" value={`${Math.round(m.base.billedMinutes)} min`} />
+                          <MiniRow label="pricePerGram" value={`${m.base.pricePerGram} Kč/g`} />
+                          <MiniRow label="ratePerHour" value={`${m.base.ratePerHour} Kč/h`} />
+                          <div className="pt-2 border-t border-border" />
+                          <MiniRow label="materialCostPerPiece" value={formatCzk(m.base.materialCostPerPiece)} />
+                          <MiniRow label="timeCostPerPiece" value={formatCzk(m.base.timeCostPerPiece)} />
+                          <MiniRow label="basePerPiece" value={formatCzk(m.base.basePerPiece)} />
+                          <MiniRow label="baseTotal" value={formatCzk(m.base.baseTotal)} emphasize />
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-lg border border-border bg-background/40">
+                        <p className="text-xs font-semibold mb-2">MODEL fees</p>
+                        <div className="space-y-2">
+                          {m.fees.map((f) => (
+                            <details key={f.id} className="p-2 rounded border border-border" open={false}>
+                              <summary className="cursor-pointer select-none flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold truncate">{f.name}</p>
+                                  <p className="text-[11px] text-muted-foreground">
+                                    {(f.reason?.surface_unavailable ? 'SKIPPED' : (f.applied ? 'MATCH' : 'NO MATCH'))} • {f.scope} • {formatFeeLabel(f)}
+                                  </p>
+                                </div>
+                                <p className="text-xs font-semibold">{formatSignedCzk(f.amount)}</p>
+                              </summary>
+
+                              <div className="mt-2 text-[11px] text-muted-foreground space-y-2">
+                                <div className="grid grid-cols-1 gap-1">
+                                  <MiniRow label="apply" value={String(!!f.reason?.apply)} />
+                                  <MiniRow label="match" value={String(!!f.reason?.match)} />
+                                  <MiniRow label="targetOk" value={String(!!f.reason?.targetOk)} />
+                                  {f.reason?.surface_unavailable && <MiniRow label="surface" value="unavailable (fee skipped)" />}
+                                  <MiniRow label="charge_basis" value={String(f.charge_basis || '')} />
+                                  {Number.isFinite(f.unit_amount) && <MiniRow label="unit_amount" value={String(f.unit_amount)} />}
+                                  {Number.isFinite(f.percent_base_per_piece) && (
+                                    <MiniRow label="percent_base_per_piece" value={formatCzk(f.percent_base_per_piece)} />
+                                  )}
+                                </div>
+
+                                {Array.isArray(f.reason?.conditions) && f.reason.conditions.length > 0 && (
+                                  <div>
+                                    <p className="text-[11px] font-semibold text-foreground">Conditions</p>
+                                    <div className="mt-1 space-y-1">
+                                      {f.reason.conditions.map((c, idx) => (
+                                        <div key={idx} className="flex items-center justify-between gap-3">
+                                          <span className="truncate">{c.field} {c.op} {String(c.value)}</span>
+                                          <span className={c.ok ? 'text-green-600' : 'text-red-600'}>{c.ok ? 'OK' : 'FAIL'}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </details>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </details>
+
+            <details className="p-3 rounded-lg border border-border" open={false}>
+              <summary className="cursor-pointer select-none text-sm font-semibold">ORDER fees</summary>
+              <div className="mt-3 space-y-2">
+                {quote.orderFees.map((f) => (
+                  <details key={f.id} className="p-2 rounded border border-border" open={false}>
+                    <summary className="cursor-pointer select-none flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold truncate">{f.name}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {(f.reason?.surface_unavailable ? 'SKIPPED' : (f.applied ? 'MATCH' : 'NO MATCH'))} • {f.scope} • {formatFeeLabel(f)}
+                        </p>
+                      </div>
+                      <p className="text-xs font-semibold">{formatSignedCzk(f.amount)}</p>
+                    </summary>
+
+                    <div className="mt-2 text-[11px] text-muted-foreground space-y-2">
+                      <div className="grid grid-cols-1 gap-1">
+                        <MiniRow label="apply" value={String(!!f.reason?.apply)} />
+                        <MiniRow label="hasSubset" value={String(!!f.reason?.hasSubset)} />
+                        <MiniRow label="subset" value={Array.isArray(f.subset) ? f.subset.join(', ') : ''} />
+                        {f.reason?.surface_unavailable && (
+                          <MiniRow
+                            label="surface"
+                            value={`unavailable (fee skipped)${Array.isArray(f.reason?.surface_unavailable_models) ? `; missing: ${f.reason.surface_unavailable_models.join(', ')}` : ''}`}
+                          />
+                        )}
+                        {Number.isFinite(f.percent_base) && <MiniRow label="percent_base" value={formatCzk(f.percent_base)} />}
+                      </div>
+
+                      {Array.isArray(f.reason?.models) && f.reason.models.length > 0 && (
+                        <div>
+                          <p className="text-[11px] font-semibold text-foreground">Per-model matching</p>
+                          <div className="mt-1 space-y-1">
+                            {f.reason.models.map((m, idx) => (
+                              <div key={idx} className="p-2 rounded border border-border bg-background/40">
+                                <div className="flex items-center justify-between gap-3">
+                                  <span className="truncate">{m.modelName}</span>
+                                  <span className={(m.targetOk && m.match) ? 'text-green-600' : 'text-red-600'}>
+                                    {(m.targetOk && m.match) ? 'IN' : 'OUT'}
+                                  </span>
+                                </div>
+                                <div className="mt-1 flex items-center gap-3">
+                                  <span>targetOk: {String(!!m.targetOk)}</span>
+                                  <span>match: {String(!!m.match)}</span>
+                                </div>
+                                {Array.isArray(m.conditions) && m.conditions.length > 0 && (
+                                  <div className="mt-1 space-y-1">
+                                    {m.conditions.map((c, cidx) => (
+                                      <div key={cidx} className="flex items-center justify-between gap-3">
+                                        <span className="truncate">{c.field} {c.op} {String(c.value)}</span>
+                                        <span className={c.ok ? 'text-green-600' : 'text-red-600'}>{c.ok ? 'OK' : 'FAIL'}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </details>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

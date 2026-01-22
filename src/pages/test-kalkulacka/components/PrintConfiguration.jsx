@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import Icon from '../../../components/AppIcon';
 
 import Input from '../../../components/ui/Input';
@@ -10,6 +10,13 @@ const PrintConfiguration = ({
   onConfigChange,
   selectedFile,
   initialConfig,
+  // AdminPricing/AdminFees (tenant-scoped)
+  pricingConfig,
+  feesConfig,
+  feeSelections,
+  onFeeSelectionsChange,
+  uploadedFiles,
+  disabled = false,
   // Widget slicing presets
   availablePresets = [],
   defaultPresetId = null,
@@ -32,29 +39,190 @@ const PrintConfiguration = ({
   };
   const [config, setConfig] = useState(initialConfig || {
     material: 'pla',
+    color: null,
     quality: 'standard',
     infill: 20,
     quantity: 1,
     supports: false,
-    postProcessing: [],
-    expressDelivery: false,
-    color: 'white'
   });
 
   useEffect(() => {
     if (initialConfig) {
-      setConfig(initialConfig);
+      // Ensure stable shape for older configs (avoid undefined arrays/bools).
+      setConfig({
+        material: 'pla',
+        color: null,
+        quality: 'standard',
+        infill: 20,
+        quantity: 1,
+        supports: false,
+        ...(initialConfig || {}),
+      });
     }
   }, [initialConfig]);
 
-  const materials = [
-    { value: 'pla', label: 'PLA', description: 'Základní materiál, snadný tisk' },
-    { value: 'abs', label: 'ABS', description: 'Odolný, vhodný pro funkční díly' },
-    { value: 'petg', label: 'PETG', description: 'Chemicky odolný, průhledný' },
-    { value: 'tpu', label: 'TPU', description: 'Flexibilní, gumový materiál' },
-    { value: 'wood', label: 'Wood Fill', description: 'PLA s dřevěnými vlákny' },
-    { value: 'carbon', label: 'Carbon Fiber', description: 'Vysoce pevný kompozit' }
-  ];
+  // Dynamic materials/colors from AdminPricing (pricing:v3)
+  const fallbackColors = useMemo(() => {
+    // Simple palette is UI-only fallback (not a source of truth).
+    return [
+      { id: 'ui_white', name: language === 'en' ? 'White' : 'Bílá', hex: '#F9FAFB' },
+      { id: 'ui_black', name: language === 'en' ? 'Black' : 'Černá', hex: '#111827' },
+      { id: 'ui_red', name: language === 'en' ? 'Red' : 'Červená', hex: '#EF4444' },
+      { id: 'ui_blue', name: language === 'en' ? 'Blue' : 'Modrá', hex: '#3B82F6' },
+      { id: 'ui_green', name: language === 'en' ? 'Green' : 'Zelená', hex: '#10B981' },
+      { id: 'ui_yellow', name: language === 'en' ? 'Yellow' : 'Žlutá', hex: '#F59E0B' },
+      { id: 'ui_orange', name: language === 'en' ? 'Orange' : 'Oranžová', hex: '#F97316' },
+      { id: 'ui_purple', name: language === 'en' ? 'Purple' : 'Fialová', hex: '#8B5CF6' },
+    ];
+  }, [language]);
+
+  const enabledMaterials = useMemo(() => {
+    const mats = Array.isArray(pricingConfig?.materials) ? pricingConfig.materials : [];
+    return mats.filter((m) => !!m?.enabled);
+  }, [pricingConfig]);
+
+  const materialOptions = useMemo(() => {
+    return enabledMaterials.map((m) => ({
+      value: m.key,
+      label: m.name,
+      description: (m?.price_per_gram ?? null) !== null
+        ? `${Number(m.price_per_gram).toFixed(2)} / g`
+        : undefined,
+    }));
+  }, [enabledMaterials]);
+
+  const selectedMaterial = useMemo(() => {
+    const currentKey = config?.material;
+    return enabledMaterials.find((m) => m.key === currentKey) || enabledMaterials[0] || null;
+  }, [enabledMaterials, config?.material]);
+
+  const uiColors = useMemo(() => {
+    const materialColors = Array.isArray(selectedMaterial?.colors) ? selectedMaterial.colors : [];
+    const src = materialColors.length ? materialColors : fallbackColors;
+    return src.map((c) => ({ id: c.id, name: c.name, hex: c.hex }));
+  }, [selectedMaterial, fallbackColors]);
+
+  // Validate selected material/color whenever AdminPricing or selection changes.
+  useEffect(() => {
+    if (!enabledMaterials.length) return;
+
+    const enabledKeys = new Set(enabledMaterials.map((m) => m.key));
+    const next = { ...config };
+    let changed = false;
+
+    if (!next.material || !enabledKeys.has(next.material)) {
+      next.material = enabledMaterials[0]?.key || 'pla';
+      changed = true;
+    }
+
+    const mat = enabledMaterials.find((m) => m.key === next.material) || enabledMaterials[0] || null;
+    const matColors = Array.isArray(mat?.colors) ? mat.colors : [];
+    const fallbackColorId = fallbackColors[0]?.id || null;
+
+    if (matColors.length) {
+      const validColorIds = new Set(matColors.map((c) => c.id));
+      if (!next.color || !validColorIds.has(next.color)) {
+        next.color = matColors[0]?.id || null;
+        changed = true;
+      }
+    } else {
+      if (!next.color) {
+        next.color = fallbackColorId;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      setConfig(next);
+      onConfigChange?.(next);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabledMaterials, fallbackColors, config?.material, config?.color]);
+
+  // Selectable services (fees) from AdminFees (fees:v3)
+  const selectableFees = useMemo(() => {
+    const fees = Array.isArray(feesConfig?.fees) ? feesConfig.fees : [];
+    // Show only active + selectable fees; required fees are not selectable in UI (will appear in breakdown later).
+    return fees.filter((f) => !!f?.active && !!f?.selectable && !f?.required);
+  }, [feesConfig]);
+
+  const selectedFeeIds = useMemo(() => {
+    const v = feeSelections?.selectedFeeIds;
+    if (v instanceof Set) return v;
+    if (Array.isArray(v)) return new Set(v);
+    return new Set();
+  }, [feeSelections]);
+
+  const feeTargetsById = feeSelections?.feeTargetsById && typeof feeSelections.feeTargetsById === 'object'
+    ? feeSelections.feeTargetsById
+    : {};
+
+  const updateFeeSelections = useCallback((fn) => {
+    if (!onFeeSelectionsChange) return;
+    onFeeSelectionsChange((prev) => {
+      const safePrev = prev && typeof prev === 'object' ? prev : {};
+      const prevSet = safePrev.selectedFeeIds instanceof Set
+        ? safePrev.selectedFeeIds
+        : new Set(Array.isArray(safePrev.selectedFeeIds) ? safePrev.selectedFeeIds : []);
+      const prevTargets = safePrev.feeTargetsById && typeof safePrev.feeTargetsById === 'object'
+        ? safePrev.feeTargetsById
+        : {};
+      return fn({ selectedFeeIds: prevSet, feeTargetsById: prevTargets });
+    });
+  }, [onFeeSelectionsChange]);
+
+  const toggleFeeSelected = useCallback((feeId, checked) => {
+    updateFeeSelections((prev) => {
+      const nextSet = new Set(prev.selectedFeeIds);
+      if (checked) nextSet.add(feeId);
+      else nextSet.delete(feeId);
+      return { ...prev, selectedFeeIds: nextSet };
+    });
+  }, [updateFeeSelections]);
+
+  const setFeeTargetAll = useCallback((feeId) => {
+    updateFeeSelections((prev) => {
+      const nextTargets = { ...(prev.feeTargetsById || {}) };
+      delete nextTargets[feeId];
+      return { ...prev, feeTargetsById: nextTargets };
+    });
+  }, [updateFeeSelections]);
+
+  const setFeeTargetSelected = useCallback((feeId, modelIds, uiMode = 'SELECTED') => {
+    const uniq = Array.from(new Set((modelIds || []).filter(Boolean)));
+    updateFeeSelections((prev) => {
+      const nextTargets = { ...(prev.feeTargetsById || {}) };
+      // uiMode is UI-only; engine uses { mode, modelIds }.
+      nextTargets[feeId] = { mode: 'SELECTED', modelIds: uniq, uiMode };
+      return { ...prev, feeTargetsById: nextTargets };
+    });
+  }, [updateFeeSelections]);
+
+  const formatFeeValue = useCallback((fee) => {
+    const v = Number(fee?.value || 0);
+    const sign = v >= 0 ? '+' : '−';
+    const abs = Math.abs(v);
+
+    const unit = (s) => (language === 'en' ? s.en : s.cs);
+
+    switch (fee?.type) {
+      case 'percent':
+        return `${sign}${abs}%`;
+      case 'per_gram':
+        return `${sign}${abs} ${unit({ cs: 'Kč/g', en: 'CZK/g' })}`;
+      case 'per_minute':
+        return `${sign}${abs} ${unit({ cs: 'Kč/min', en: 'CZK/min' })}`;
+      case 'per_cm3':
+        return `${sign}${abs} ${unit({ cs: 'Kč/cm³', en: 'CZK/cm³' })}`;
+      case 'per_cm2':
+        return `${sign}${abs} ${unit({ cs: 'Kč/cm²', en: 'CZK/cm²' })}`;
+      case 'per_piece':
+        return `${sign}${abs} ${unit({ cs: 'Kč/kus', en: 'CZK/piece' })}`;
+      case 'flat':
+      default:
+        return `${sign}${abs} ${unit({ cs: 'Kč', en: 'CZK' })}`;
+    }
+  }, [language]);
 
   const qualities = [
     { value: 'nozzle_08', label: 'Extra hrubý (0.8mm)', description: 'Extrémně rychlý tisk pro robustní díly.' },
@@ -66,36 +234,25 @@ const PrintConfiguration = ({
     { value: 'ultra', label: 'Ultra jemný (0.1mm)', description: 'Nejvyšší možná kvalita, velmi pomalý tisk.' }
   ];
 
-  const colors = [
-    { value: 'white', label: 'Bílá', color: '#FFFFFF' },
-    { value: 'black', label: 'Černá', color: '#000000' },
-    { value: 'red', label: 'Červená', color: '#EF4444' },
-    { value: 'blue', label: 'Modrá', color: '#3B82F6' },
-    { value: 'green', label: 'Zelená', color: '#10B981' },
-    { value: 'yellow', label: 'Žlutá', color: '#F59E0B' },
-    { value: 'orange', label: 'Oranžová', color: '#F97316' },
-    { value: 'purple', label: 'Fialová', color: '#8B5CF6' }
-  ];
-
-  const postProcessingOptions = [
-    { id: 'sanding', label: 'Broušení', price: 50, description: 'Vyhlazení povrchu' },
-    { id: 'painting', label: 'Lakování', price: 120, description: 'Barevná úprava povrchu' },
-    { id: 'assembly', label: 'Montáž', price: 200, description: 'Sestavení více dílů' },
-    { id: 'drilling', label: 'Vrtání otvorů', price: 80, description: 'Přesné otvory dle specifikace' }
-  ];
-
-  const handleConfigChange = (key, value) => {
-    const newConfig = { ...config, [key]: value };
-    setConfig(newConfig);
-    onConfigChange?.(newConfig);
+  const commitConfig = (nextConfig) => {
+    setConfig(nextConfig);
+    onConfigChange?.(nextConfig);
   };
 
-  const handlePostProcessingChange = (optionId, checked) => {
-    const newPostProcessing = checked
-      ? [...config?.postProcessing, optionId]
-      : config?.postProcessing?.filter(id => id !== optionId);
+  const handleConfigChange = (key, value) => {
+    commitConfig({ ...config, [key]: value });
+  };
 
-    handleConfigChange('postProcessing', newPostProcessing);
+  const handleMaterialChange = (materialKey) => {
+    const mat = enabledMaterials.find((m) => m.key === materialKey) || null;
+    const nextColor = (Array.isArray(mat?.colors) && mat.colors.length)
+      ? mat.colors[0]?.id
+      : (fallbackColors[0]?.id || null);
+    commitConfig({ ...config, material: materialKey, color: nextColor });
+  };
+
+  const handleColorChange = (colorId) => {
+    commitConfig({ ...config, color: colorId });
   };
 
   // Quality presets
@@ -231,31 +388,38 @@ const PrintConfiguration = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Select
             label="Materiál"
-            options={materials}
-            value={config?.material}
-            onChange={(value) => handleConfigChange('material', value)}
+            options={materialOptions}
+            value={config?.material || ''}
+            onChange={(value) => handleMaterialChange(value)}
             searchable
+            disabled={disabled || materialOptions.length <= 1}
           />
 
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">Barva</label>
             <div className="grid grid-cols-4 gap-2">
-              {colors?.map((color) => (
+              {uiColors?.map((color) => (
                 <button
-                  key={color?.value}
-                  onClick={() => handleConfigChange('color', color?.value)}
-                  className={`flex items-center space-x-2 p-2 rounded-lg border transition-colors ${config?.color === color?.value
+                  key={color?.id}
+                  onClick={() => handleColorChange(color?.id)}
+                  disabled={disabled}
+                  className={`flex items-center space-x-2 p-2 rounded-lg border transition-colors ${config?.color === color?.id
                     ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
                     }`}
                 >
                   <div
                     className="w-4 h-4 rounded-full border border-border"
-                    style={{ backgroundColor: color?.color }}
+                    style={{ backgroundColor: color?.hex }}
                   />
-                  <span className="text-xs font-medium">{color?.label}</span>
+                  <span className="text-xs font-medium">{color?.name}</span>
                 </button>
               ))}
             </div>
+            {selectedMaterial && (!Array.isArray(selectedMaterial?.colors) || selectedMaterial.colors.length === 0) && (
+              <div className="text-xs text-muted-foreground">
+                {language === 'en' ? 'Using fallback palette (UI only).' : 'Používám fallback paletu (jen pro UI).'}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -303,14 +467,14 @@ const PrintConfiguration = ({
           />
         </div>
       </div>
-      {/* Quantity and Express */}
+      {/* Quantity */}
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center">
           <Icon name="Package2" size={20} className="mr-2" />
-          Množství a doručení
+          Množství
         </h3>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4">
           <Input
             label="Počet kusů"
             type="number"
@@ -319,18 +483,12 @@ const PrintConfiguration = ({
             value={config?.quantity}
             onChange={(e) => handleConfigChange('quantity', parseInt(e?.target?.value) || 1)}
           />
-
-          <div className="space-y-4">
-            <Checkbox
-              label="Expresní tisk"
-              description="Prioritní zpracování do 24 hodin (+50% k ceně)"
-              checked={config?.expressDelivery}
-              onChange={(e) => handleConfigChange('expressDelivery', e?.target?.checked)}
-            />
-          </div>
+          <p className="text-xs text-muted-foreground">
+            Expresní příplatky a další služby nastavíš v <span className="font-medium">Admin / Fees</span>.
+          </p>
         </div>
       </div>
-      {/* Post Processing */}
+      {/* Additional services (fees from AdminFees) */}
       <div className="bg-card border border-border rounded-xl p-6">
         <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center">
           <Icon name="Wrench" size={20} className="mr-2" />
@@ -338,24 +496,145 @@ const PrintConfiguration = ({
         </h3>
 
         <div className="space-y-3">
-          {postProcessingOptions?.map((option) => (
-            <div key={option?.id} className="flex items-center justify-between p-3 border border-border rounded-lg">
-              <div className="flex items-center space-x-3">
-                <Checkbox
-                  checked={config?.postProcessing?.includes(option?.id)}
-                  onChange={(e) => handlePostProcessingChange(option?.id, e?.target?.checked)}
-                />
-                <div>
-                  <p className="text-sm font-medium text-foreground">{option?.label}</p>
-                  <p className="text-xs text-muted-foreground">{option?.description}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-semibold text-foreground">+{option?.price} Kč</p>
-                <p className="text-xs text-muted-foreground">za kus</p>
-              </div>
+          {selectableFees.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              {language === 'en'
+                ? 'No selectable services configured. Add fees in Admin / Fees.'
+                : 'Žádné volitelné služby nejsou nastavené. Přidej je v Admin / Fees.'}
             </div>
-          ))}
+          ) : (
+            selectableFees.map((fee) => {
+              const isSelected = selectedFeeIds.has(fee.id);
+              const target = feeTargetsById?.[fee.id];
+              const targetIds = Array.isArray(target?.modelIds) ? target.modelIds : [];
+              const targetUi = (target && typeof target === 'object' && target.uiMode)
+                ? target.uiMode
+                : (target?.mode === 'SELECTED' ? 'SELECTED' : 'ALL');
+
+              const canTarget = !!fee?.apply_to_selected_models_enabled && (uploadedFiles?.length || 0) > 1;
+              const currentId = selectedFile?.id || null;
+              const ensureAtLeastOne = (ids) => {
+                const uniq = Array.from(new Set((ids || []).filter(Boolean)));
+                if (uniq.length > 0) return uniq;
+                return currentId ? [currentId] : [];
+              };
+
+              return (
+                <div key={fee.id} className="p-3 border border-border rounded-lg">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        checked={isSelected}
+                        onChange={(e) => toggleFeeSelected(fee.id, !!e?.target?.checked)}
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{fee.name}</p>
+                        {fee.description ? (
+                          <p className="text-xs text-muted-foreground">{fee.description}</p>
+                        ) : null}
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                            {(fee.scope || 'MODEL').toUpperCase()}
+                          </span>
+                          {fee.charge_basis === 'PER_PIECE' ? (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                              {language === 'en' ? 'Per piece' : 'Za kus'}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+                              {language === 'en' ? 'Per file' : 'Za soubor'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-foreground">{formatFeeValue(fee)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {fee.type === 'percent'
+                          ? (language === 'en' ? 'from subtotal' : 'ze subtotalu')
+                          : (language === 'en' ? 'in quote' : 'v ceně')}
+                      </p>
+                    </div>
+                  </div>
+
+                  {canTarget && isSelected && (
+                    <div className="mt-3 pl-7">
+                      <div className="text-xs text-muted-foreground mb-2">
+                        {language === 'en' ? 'Apply to:' : 'Aplikovat na:'}
+                      </div>
+                      <div className="flex flex-wrap gap-4 text-sm">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`fee_target_${fee.id}`}
+                            checked={targetUi === 'ALL'}
+                            onChange={() => setFeeTargetAll(fee.id)}
+                          />
+                          <span>{language === 'en' ? 'All models' : 'Všechny modely'}</span>
+                        </label>
+
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`fee_target_${fee.id}`}
+                            checked={targetUi === 'THIS'}
+                            onChange={() => setFeeTargetSelected(fee.id, currentId ? [currentId] : [], 'THIS')}
+                          />
+                          <span>{language === 'en' ? 'This model' : 'Tento model'}</span>
+                        </label>
+
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`fee_target_${fee.id}`}
+                            checked={targetUi === 'SELECTED'}
+                            onChange={() => setFeeTargetSelected(fee.id, ensureAtLeastOne(targetIds), 'SELECTED')}
+                          />
+                          <span>{language === 'en' ? 'Selected models' : 'Vybrané modely'}</span>
+                        </label>
+                      </div>
+
+                      {targetUi === 'SELECTED' && (
+                        <div className="mt-2 grid grid-cols-1 gap-2">
+                          {(uploadedFiles || []).map((f) => {
+                            const checked = targetIds.includes(f.id);
+                            return (
+                              <label key={f.id} className="flex items-center gap-2 text-xs text-foreground">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    const next = new Set(targetIds);
+                                    if (e?.target?.checked) next.add(f.id);
+                                    else next.delete(f.id);
+                                    setFeeTargetSelected(fee.id, ensureAtLeastOne(Array.from(next)), 'SELECTED');
+                                  }}
+                                />
+                                <span className="truncate max-w-[320px]">{f.name}</span>
+                                {f.id === currentId ? (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                                    {language === 'en' ? 'current' : 'aktuální'}
+                                  </span>
+                                ) : null}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!!fee?.apply_to_selected_models_enabled === false && isSelected ? (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      {language === 'en' ? 'Applied to all models.' : 'Aplikováno na všechny modely.'}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
       {/* Estimated Results */}

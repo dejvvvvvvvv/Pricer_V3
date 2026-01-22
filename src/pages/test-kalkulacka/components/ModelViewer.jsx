@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Canvas, useLoader } from '@react-three/fiber';
 import { OrbitControls, Center } from '@react-three/drei';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader';
@@ -8,7 +8,125 @@ import Icon from '../../../components/AppIcon';
 import Button from '../../../components/ui/Button';
 import ErrorBoundary from './ErrorBoundary';
 
-function STLModel({ url }) {
+// ─────────────────────────────────────────────────────────────────────────────
+// Surface area (STL) – frontend-only with guardrails
+// NOTE: We do NOT compute volume in browser (backend slicer is source of truth).
+// Surface is generally safe, but still protect the UI from huge meshes.
+const MAX_PREVIEW_MB = 12;
+const MAX_SURFACE_VERTICES = 2_000_000; // ~2M vertices
+const MAX_SURFACE_TRIANGLES = 1_000_000; // ~1M triangles
+const MAX_SURFACE_TIME_MS = 140; // time budget in one idle job
+
+function scheduleIdle(fn) {
+  if (typeof window === 'undefined') return null;
+  if (typeof window.requestIdleCallback === 'function') {
+    return window.requestIdleCallback(() => fn());
+  }
+  return window.setTimeout(fn, 0);
+}
+
+function cancelIdle(handle) {
+  if (handle == null || typeof window === 'undefined') return;
+  if (typeof window.cancelIdleCallback === 'function') {
+    try { window.cancelIdleCallback(handle); } catch { /* ignore */ }
+    return;
+  }
+  try { window.clearTimeout(handle); } catch { /* ignore */ }
+}
+
+function computeSurfaceMm2FromGeometry(geometry, opts) {
+  try {
+    const position = geometry?.attributes?.position;
+    if (!position || !position.array) {
+      return { surfaceMm2: null, reason: 'no_position' };
+    }
+
+    const vertexCount = position.count || 0;
+    const index = geometry.getIndex?.() || geometry.index;
+    const indexArray = index?.array || null;
+    const triangleCount = indexArray ? Math.floor((indexArray.length || 0) / 3) : Math.floor(vertexCount / 3);
+
+    const maxVertices = opts?.maxVertices ?? MAX_SURFACE_VERTICES;
+    const maxTriangles = opts?.maxTriangles ?? MAX_SURFACE_TRIANGLES;
+    const maxMs = opts?.maxMs ?? MAX_SURFACE_TIME_MS;
+
+    if (vertexCount > maxVertices || triangleCount > maxTriangles) {
+      return { surfaceMm2: null, reason: 'too_many_vertices', vertexCount, triangleCount };
+    }
+
+    const arr = position.array;
+    const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    let areaMm2 = 0;
+
+    const checkEvery = 10_000;
+    const triLen = triangleCount;
+
+    for (let t = 0; t < triLen; t += 1) {
+      let ia;
+      let ib;
+      let ic;
+      if (indexArray) {
+        ia = indexArray[t * 3] * 3;
+        ib = indexArray[t * 3 + 1] * 3;
+        ic = indexArray[t * 3 + 2] * 3;
+      } else {
+        ia = t * 9;
+        ib = t * 9 + 3;
+        ic = t * 9 + 6;
+      }
+
+      const ax = arr[ia];
+      const ay = arr[ia + 1];
+      const az = arr[ia + 2];
+
+      const bx = arr[ib];
+      const by = arr[ib + 1];
+      const bz = arr[ib + 2];
+
+      const cx = arr[ic];
+      const cy = arr[ic + 1];
+      const cz = arr[ic + 2];
+
+      const abx = bx - ax;
+      const aby = by - ay;
+      const abz = bz - az;
+
+      const acx = cx - ax;
+      const acy = cy - ay;
+      const acz = cz - az;
+
+      const crossX = aby * acz - abz * acy;
+      const crossY = abz * acx - abx * acz;
+      const crossZ = abx * acy - aby * acx;
+
+      areaMm2 += 0.5 * Math.sqrt((crossX * crossX) + (crossY * crossY) + (crossZ * crossZ));
+
+      if (t > 0 && (t % checkEvery === 0)) {
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        if ((now - t0) > maxMs) {
+          return {
+            surfaceMm2: null,
+            reason: 'time_budget_exceeded',
+            vertexCount,
+            triangleCount,
+            ms: now - t0,
+          };
+        }
+      }
+    }
+
+    const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (!Number.isFinite(areaMm2) || areaMm2 <= 0) {
+      return { surfaceMm2: null, reason: 'bad_result', vertexCount, triangleCount, ms: t1 - t0 };
+    }
+
+    return { surfaceMm2: areaMm2, reason: 'ok', vertexCount, triangleCount, ms: t1 - t0 };
+  } catch (e) {
+    return { surfaceMm2: null, reason: 'exception', error: String(e?.message || e) };
+  }
+}
+
+function STLModel({ url, computeSurface, onSurfaceComputed }) {
   const geometry = useLoader(STLLoader, url);
 
   // Center geometry (cheap & safe) – prevents model being out of view.
@@ -21,6 +139,40 @@ function STLModel({ url }) {
     box.getCenter(center);
     geometry.translate(-center.x, -center.y, -center.z);
   }, [geometry]);
+
+  // Compute mesh surface (mm^2) with guardrails (idle + time budget).
+  useEffect(() => {
+    if (!computeSurface || !geometry || typeof onSurfaceComputed !== 'function') return undefined;
+
+    let cancelled = false;
+    const handle = scheduleIdle(() => {
+      if (cancelled) return;
+      const res = computeSurfaceMm2FromGeometry(geometry, {
+        maxVertices: MAX_SURFACE_VERTICES,
+        maxTriangles: MAX_SURFACE_TRIANGLES,
+        maxMs: MAX_SURFACE_TIME_MS,
+      });
+      if (cancelled) return;
+
+      const mm2 = res?.surfaceMm2;
+      const payload = {
+        surfaceMm2: Number.isFinite(mm2) ? mm2 : null,
+        surfaceCm2: Number.isFinite(mm2) ? (mm2 / 100) : null,
+        meta: {
+          reason: res?.reason,
+          vertexCount: res?.vertexCount,
+          triangleCount: res?.triangleCount,
+          ms: res?.ms,
+        },
+      };
+      onSurfaceComputed(payload);
+    });
+
+    return () => {
+      cancelled = true;
+      cancelIdle(handle);
+    };
+  }, [computeSurface, geometry, onSurfaceComputed]);
 
   return (
     <mesh geometry={geometry}>
@@ -91,7 +243,7 @@ const FullScreenViewer = ({ fileUrl, onClose }) => {
 };
 
 
-function STLCanvas({ file }) {
+function STLCanvas({ file, computeSurface, onSurfaceComputed }) {
   const url = useMemo(() => URL.createObjectURL(file), [file]);
   const canvasWrapRef = useRef(null);
 
@@ -123,7 +275,7 @@ function STLCanvas({ file }) {
       <Canvas camera={{ position: [0, 0, 100], fov: 50 }} dpr={[1, 1.5]}>
         <ambientLight intensity={0.8} />
         <directionalLight position={[10, 10, 10]} intensity={0.8} />
-        <STLModel url={url} />
+        <STLModel url={url} computeSurface={computeSurface} onSurfaceComputed={onSurfaceComputed} />
         <OrbitControls enablePan={false} autoRotate autoRotateSpeed={0.5} />
       </Canvas>
     </div>
@@ -147,18 +299,39 @@ function formatDuration(totalSeconds) {
  * - guard na velké soubory + nepodporované formáty
  * - ErrorBoundary kolem Canvas, aby stránka nespadla (white-screen)
  */
-const ModelViewer = ({ selectedFile, onRemove }) => {
+const ModelViewer = ({ selectedFile, onRemove, onSurfaceComputed }) => {
   const [fileUrl, setFileUrl] = useState(null);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   const fileObj = selectedFile?.file instanceof File ? selectedFile.file : null;
   const ext = String(selectedFile?.name || '').split('.').pop()?.toLowerCase();
   const sizeMb = (selectedFile?.size || fileObj?.size || 0) / (1024 * 1024);
+  const fileId = selectedFile?.id;
 
   // Safety thresholds (stability > fancy preview)
-  const tooLargeForPreview = sizeMb > 12;
+  const tooLargeForPreview = sizeMb > MAX_PREVIEW_MB;
   const previewSupported = ext === 'stl';
   const canFullscreen = !!fileObj && previewSupported && !tooLargeForPreview;
+  const canComputeSurface = !!fileObj && previewSupported && !tooLargeForPreview;
+
+  const surfaceCm2 =
+    Number.isFinite(selectedFile?.result?.modelInfo?.surfaceCm2)
+      ? selectedFile.result.modelInfo.surfaceCm2
+      : Number.isFinite(selectedFile?.clientModelInfo?.surfaceCm2)
+        ? selectedFile.clientModelInfo.surfaceCm2
+        : null;
+
+  const surfaceAttempted = !!selectedFile?.clientModelInfoMeta?.surface?.reason;
+  const canComputeSurfaceSafe = canComputeSurface && !(Number.isFinite(surfaceCm2) && surfaceCm2 > 0) && !surfaceAttempted;
+
+
+  const handleSurfaceComputed = useCallback(
+    (payload) => {
+      if (!onSurfaceComputed || !fileId) return;
+      onSurfaceComputed(fileId, payload);
+    },
+    [onSurfaceComputed, fileId]
+  );
 
   useEffect(() => {
     if (!canFullscreen || !fileObj) {
@@ -245,7 +418,7 @@ const ModelViewer = ({ selectedFile, onRemove }) => {
                 Pro data použijte „Metriky ze sliceru“.
               </div>
             ) : (
-              <STLCanvas file={fileObj} />
+          <STLCanvas file={fileObj} computeSurface={canComputeSurfaceSafe} onSurfaceComputed={handleSurfaceComputed} />
             )}
           </ErrorBoundary>
         </div>
@@ -273,6 +446,12 @@ const ModelViewer = ({ selectedFile, onRemove }) => {
                     <>
                       <div className="text-muted-foreground">Objem:</div>
                       <div className="text-foreground">{volumeCm3.toFixed(2)} cm³</div>
+                    </>
+                  )}
+                  {surfaceCm2 != null && (
+                    <>
+                      <div className="text-muted-foreground">Povrch:</div>
+                      <div className="text-foreground">{surfaceCm2.toFixed(2)} cm²</div>
                     </>
                   )}
                 </div>

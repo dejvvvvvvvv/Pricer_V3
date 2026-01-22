@@ -1,66 +1,93 @@
-// Pricing service for calculating print costs
-// NOTE: This file intentionally contains NO legacy engine references.
+// Pricing service used by the public calculator.
+//
+// CP3 (Tenant Storage Unification):
+// - pricingService now reads PricingConfigV3 via tenant-scoped storage helpers.
+// - Existing calculatePrice API is preserved for callers.
 
-/**
- * Default material prices (Kč/g) used as fallback when no Admin pricing is present.
- * AdminPricing stores materialPrices as an object: { [materialKey]: pricePerGram }
- */
-export const DEFAULT_MATERIAL_PRICES = {
+import {
+  loadPricingConfigV3,
+  normalizePricingConfigV3,
+  normalizeMaterialKey as normalizeMaterialKeyStorage,
+} from '../utils/adminPricingStorage';
+
+const DEFAULT_MATERIAL_PRICES = {
   pla: 0.5,
-  abs: 0.6,
-  petg: 0.7,
+  abs: 0.8,
+  petg: 0.6,
   tpu: 1.2,
-  wood: 0.8,
-  carbon: 1.5,
+  wood: 1.5,
+  carbon: 2.0,
 };
 
-// Default time rate (Kč/hour)
-export const DEFAULT_RATE_PER_HOUR = 100;
+const DEFAULT_RATE_PER_HOUR = 100;
 
-// Simple “fees” used by the demo Model Upload page.
-// In the full product, these belong to Admin > Fees.
-export const POST_PROCESSING_PRICES = {
+const POST_PROCESSING_PRICES = {
   sanding: 50,
-  painting: 120,
-  assembly: 200,
+  painting: 100,
+  assembly: 150,
   drilling: 80,
 };
 
-function clampMin0(n) {
-  const v = Number.isFinite(n) ? n : 0;
-  return v < 0 ? 0 : v;
+function clampMin0(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return 0;
+  return Math.max(0, num);
 }
 
 function roundToStep(value, step, mode) {
-  const s = step > 0 ? step : 1;
-  if (mode === 'up') return Math.ceil(value / s) * s;
-  // nearest
-  return Math.round(value / s) * s;
+  if (!step || step <= 0) return value;
+  const ratio = value / step;
+  if (mode === 'up') return Math.ceil(ratio) * step;
+  return Math.round(ratio) * step;
 }
 
 /**
- * Attempts to read Admin pricing config saved by AdminPricing page (local demo).
- * Safe in browser only; returns null otherwise.
+ * Normalizes material keys for matching ("PLA" -> "pla", "PETG Black" -> "petg_black").
+ * Exported for consistency across the app.
  */
-function readAdminPricingFromLocalStorage() {
-  try {
-    if (typeof window === 'undefined') return null;
+export function normalizeMaterialKey(input) {
+  return normalizeMaterialKeyStorage(input);
+}
 
-    // Keep in sync with AdminPricing.jsx defaults
-    const customerId = 'test-customer-1';
-    const key = `admin_pricing_demo_v2:${customerId}`;
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
+/**
+ * Returns the price per gram for a material key, using V3 config as the source of truth.
+ * Fallback order:
+ * 1) pricingConfig.materials[].price_per_gram (match by key)
+ * 2) pricingConfig.materialPrices map (legacy compatibility)
+ * 3) DEFAULT_MATERIAL_PRICES
+ */
+export function getMaterialPricePerGram(pricingConfig, materialKey) {
+  const key = normalizeMaterialKey(materialKey || 'pla');
 
-    // Normalize shape
-    return {
-      materialPrices: parsed?.materialPrices || null,
-      tenant_pricing: parsed?.tenant_pricing || null,
-    };
-  } catch {
-    return null;
+  // V3 preferred
+  const mats = Array.isArray(pricingConfig?.materials) ? pricingConfig.materials : [];
+  const direct = mats.find((m) => normalizeMaterialKey(m?.key || m?.name) === key);
+  if (direct && Number.isFinite(Number(direct.price_per_gram))) {
+    return clampMin0(direct.price_per_gram);
   }
+
+  // Legacy map fallback
+  const map = pricingConfig?.materialPrices && typeof pricingConfig.materialPrices === 'object' ? pricingConfig.materialPrices : null;
+  if (map && Number.isFinite(Number(map[key]))) {
+    return clampMin0(map[key]);
+  }
+
+  // Defaults
+  return clampMin0(DEFAULT_MATERIAL_PRICES[key] ?? DEFAULT_MATERIAL_PRICES.pla);
+}
+
+function resolvePricingConfigV3(overrides) {
+  // Backward compatibility:
+  // - Overrides might be already V3 ({schema_version:3,...})
+  // - Or legacy ({materialPrices, tenant_pricing, ...})
+  if (overrides && typeof overrides === 'object') {
+    try {
+      return normalizePricingConfigV3(overrides);
+    } catch {
+      // fallthrough
+    }
+  }
+  return loadPricingConfigV3();
 }
 
 /**
@@ -86,34 +113,30 @@ function readAdminPricingFromLocalStorage() {
  * base -> fees -> markup -> minima -> rounding
  *
  * @param {PricingConfig} config
- * @param {Object} [overrides] Optional: { materialPrices, tenant_pricing }
+ * @param {Object} [overrides] Optional: PricingConfigV3 or legacy config shape
  * @returns {PricingResult}
  */
 export function calculatePrice(config, overrides = undefined) {
   const qty = Math.max(1, Math.floor(clampMin0(config.quantity) || 1));
-  const materialKey = (config.material || 'pla').toLowerCase();
+  const materialKey = normalizeMaterialKey(config.material || 'pla');
 
-  const local = overrides || readAdminPricingFromLocalStorage() || {};
-  const materialPrices = local.materialPrices || DEFAULT_MATERIAL_PRICES;
+  const pricingCfg = resolvePricingConfigV3(overrides);
 
-  const rules = local.tenant_pricing || {};
-
-  const ratePerHour = clampMin0(rules.rate_per_hour ?? DEFAULT_RATE_PER_HOUR);
+  const ratePerHour = clampMin0(pricingCfg.rate_per_hour ?? DEFAULT_RATE_PER_HOUR);
 
   // ----- BASE (per model)
-  const pricePerGram = clampMin0(materialPrices[materialKey] ?? materialPrices.pla ?? DEFAULT_MATERIAL_PRICES.pla);
+  const pricePerGram = getMaterialPricePerGram(pricingCfg, materialKey);
   const grams = clampMin0(config.materialGrams);
   const baseMaterial = grams * pricePerGram;
 
   const timeSeconds = clampMin0(config.printTimeSeconds);
   const timeMinutes = timeSeconds / 60;
-  const billedMinutes = rules.min_billed_minutes_enabled
-    ? Math.max(timeMinutes, clampMin0(rules.min_billed_minutes_value))
-    : timeMinutes;
+  const minBilled = clampMin0(pricingCfg.minimum_billed_minutes);
+  const billedMinutes = minBilled > 0 ? Math.max(timeMinutes, minBilled) : timeMinutes;
   const billedHours = billedMinutes / 60;
   const baseTime = billedHours * ratePerHour;
 
-  // ----- FEES (per model) – demo only
+  // ----- FEES (per model) – demo only (hardcoded)
   const postProcessingFee = (config.postProcessing || []).reduce((sum, id) => sum + clampMin0(POST_PROCESSING_PRICES[id] || 0), 0);
 
   // Express: keep previous behaviour (adds +50% of subtotal)
@@ -124,15 +147,16 @@ export function calculatePrice(config, overrides = undefined) {
 
   // ----- MARKUP (per model)
   let markup = 0;
-  if (rules.markup_enabled) {
-    const mode = rules.markup_mode || 'flat';
-    const v = clampMin0(rules.markup_value);
+  const markupCfg = pricingCfg?.markup && typeof pricingCfg.markup === 'object' ? pricingCfg.markup : null;
+  if (markupCfg?.enabled) {
+    const mode = markupCfg.mode || 'flat';
+    const v = clampMin0(markupCfg.value);
     const basePlusFees = baseMaterial + baseTime + fees;
 
     if (mode === 'percent') {
       markup = basePlusFees * (v / 100);
     } else if (mode === 'min_flat') {
-      // ensure at least v Kč markup
+      // keep previous behaviour
       markup = Math.max(v, 0);
     } else {
       // flat
@@ -144,40 +168,34 @@ export function calculatePrice(config, overrides = undefined) {
 
   // ----- MINIMA
   let minPriceApplied = false;
-  if (rules.min_price_per_model_enabled) {
-    const minModel = clampMin0(rules.min_price_per_model_value);
-    if (perModel < minModel) {
-      perModel = minModel;
-      minPriceApplied = true;
-    }
+  const minPerModel = clampMin0(pricingCfg.minimum_price_per_model);
+  if (minPerModel > 0 && perModel < minPerModel) {
+    perModel = minPerModel;
+    minPriceApplied = true;
   }
 
   let total = perModel * qty;
 
   let minOrderApplied = false;
-  if (rules.min_order_total_enabled) {
-    const minOrder = clampMin0(rules.min_order_total_value);
-    if (total < minOrder) {
-      total = minOrder;
-      minOrderApplied = true;
-    }
+  const minOrder = clampMin0(pricingCfg.minimum_order_total);
+  if (minOrder > 0 && total < minOrder) {
+    total = minOrder;
+    minOrderApplied = true;
   }
 
   // ----- ROUNDING
-  if (rules.rounding_enabled) {
-    const step = clampMin0(rules.rounding_step) || 1;
-    const mode = rules.rounding_mode === 'up' ? 'up' : 'nearest';
+  const roundingCfg = pricingCfg?.rounding && typeof pricingCfg.rounding === 'object' ? pricingCfg.rounding : null;
+  if (roundingCfg?.enabled) {
+    const step = clampMin0(roundingCfg.step) || 1;
+    const mode = roundingCfg.mode === 'up' ? 'up' : 'nearest';
 
-    if (rules.smart_rounding_enabled !== false) {
+    if (roundingCfg.smart_rounding_enabled !== false) {
       total = roundToStep(total, step, mode);
     } else {
       perModel = roundToStep(perModel, step, mode);
       total = perModel * qty;
 
-      if (rules.min_order_total_enabled) {
-        const minOrder = clampMin0(rules.min_order_total_value);
-        if (total < minOrder) total = minOrder;
-      }
+      if (minOrder > 0 && total < minOrder) total = minOrder;
     }
   }
 
@@ -186,14 +204,14 @@ export function calculatePrice(config, overrides = undefined) {
     { label: 'Čas tisku', amount: baseTime * qty },
   ];
 
-  if (postProcessingFee > 0) breakdown.push({ label: 'Dodatečné služby', amount: postProcessingFee * qty });
-  if (expressFee > 0) breakdown.push({ label: 'Expres', amount: expressFee * qty });
-  if (markup > 0) breakdown.push({ label: 'Přirážka', amount: markup * qty });
+  if (postProcessingFee !== 0) breakdown.push({ label: 'Dodatečné služby', amount: postProcessingFee * qty });
+  if (expressFee !== 0) breakdown.push({ label: 'Expres', amount: expressFee * qty });
+  if (markup !== 0) breakdown.push({ label: 'Přirážka', amount: markup * qty });
 
   if (minPriceApplied) breakdown.push({ label: 'Minimum za model', amount: 0 });
   if (minOrderApplied) breakdown.push({ label: 'Minimum objednávky', amount: 0 });
 
-  if (rules.rounding_enabled) breakdown.push({ label: 'Zaokrouhlení', amount: 0 });
+  if (roundingCfg?.enabled) breakdown.push({ label: 'Zaokrouhlení', amount: 0 });
 
   return {
     total,
@@ -212,6 +230,6 @@ export function formatTime(seconds) {
   const hours = Math.floor(s / 3600);
   const minutes = Math.floor((s % 3600) / 60);
 
-  if (hours === 0) return `${minutes} min`;
+  if (hours == 0) return `${minutes} min`;
   return `${hours}h ${minutes}min`;
 }

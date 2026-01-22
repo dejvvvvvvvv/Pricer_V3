@@ -11,16 +11,17 @@ import GenerateButton from './components/GenerateButton';
 import ErrorBoundary from './components/ErrorBoundary';
 import { sliceModelLocal } from '../../services/slicerApi';
 import { fetchWidgetPresets } from '../../services/presetsApi';
+import { loadPricingConfigV3 } from '../../utils/adminPricingStorage';
+import { loadFeesConfigV3 } from '../../utils/adminFeesStorage';
 
 // Default config is used for newly uploaded models (so switching between models does not
 // accidentally reset already-sliced results when a config entry is missing).
 const DEFAULT_PRINT_CONFIG = {
   material: 'pla',
+  color: null,
   quality: 'standard',
   infill: 20,
   quantity: 1,
-  postProcessing: [],
-  expressDelivery: false,
   supports: false,
 };
 
@@ -35,7 +36,49 @@ const TestKalkulacka = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [sliceAllProcessing, setSliceAllProcessing] = useState(false);
 
+  // Tenant-scoped pricing + fees (AdminPricing/AdminFees)
+  const [pricingConfig, setPricingConfig] = useState(() => loadPricingConfigV3());
+  const [feesConfig, setFeesConfig] = useState(() => loadFeesConfigV3());
+
+  // Fee selections in calculator UI (optional selectable fees + apply targets)
+  const [feeSelections, setFeeSelections] = useState(() => ({
+    selectedFeeIds: new Set(),
+    feeTargetsById: {},
+  }));
+
   const [batchProgress, setBatchProgress] = useState({ mode: null, done: 0, total: 0 });
+
+  // Keep calculator configs synced with localStorage changes (best-effort; storage events fire across tabs).
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (!e?.key) return;
+      if (e.key.includes('pricing:v3')) setPricingConfig(loadPricingConfigV3());
+      if (e.key.includes('fees:v3')) setFeesConfig(loadFeesConfigV3());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  // Seed default selections from AdminFees (selected_by_default) + prune removed fees.
+  useEffect(() => {
+    const fees = Array.isArray(feesConfig?.fees) ? feesConfig.fees : [];
+    // Only selectable + not-required fees belong to UI selections.
+    const activeSelectable = new Set(fees.filter(f => f?.active && f?.selectable && !f?.required).map(f => f.id));
+    const defaults = fees.filter(f => f?.active && f?.selectable && !f?.required && f?.selected_by_default).map(f => f.id);
+
+    setFeeSelections(prev => {
+      const prevSet = (prev?.selectedFeeIds instanceof Set) ? prev.selectedFeeIds : new Set();
+      const nextSet = new Set([...prevSet].filter(id => activeSelectable.has(id)));
+      for (const id of defaults) nextSet.add(id);
+
+      const nextTargets = { ...(prev?.feeTargetsById || {}) };
+      for (const k of Object.keys(nextTargets)) {
+        if (!activeSelectable.has(k)) delete nextTargets[k];
+      }
+
+      return { selectedFeeIds: nextSet, feeTargetsById: nextTargets };
+    });
+  }, [feesConfig]);
 
   // Widget slicing presets (loaded from backend)
   const [availablePresets, setAvailablePresets] = useState([]);
@@ -50,9 +93,72 @@ const TestKalkulacka = () => {
 
   const updateModelStatus = useCallback((modelId, newProps) => {
     setUploadedFiles(prevFiles =>
-      prevFiles.map(file => (file.id === modelId ? { ...file, ...newProps } : file))
+      prevFiles.map(file => {
+        if (file.id !== modelId) return file;
+
+        const next = { ...file, ...newProps };
+
+        // Persist client-computed model info (e.g. surface) across re-slices.
+        const mergedClientModelInfo = newProps?.clientModelInfo
+          ? { ...(file.clientModelInfo || {}), ...newProps.clientModelInfo }
+          : (file.clientModelInfo || undefined);
+        if (mergedClientModelInfo) next.clientModelInfo = mergedClientModelInfo;
+
+        if (newProps?.clientModelInfoMeta) {
+          next.clientModelInfoMeta = { ...(file.clientModelInfoMeta || {}), ...newProps.clientModelInfoMeta };
+        }
+
+        const patchSurfaceIntoResult = (res) => {
+          if (!res || typeof res !== 'object') return res;
+          const surfaceMm2 = mergedClientModelInfo?.surfaceMm2;
+          if (!Number.isFinite(surfaceMm2) || surfaceMm2 <= 0) return res;
+          return {
+            ...res,
+            modelInfo: {
+              ...(res.modelInfo || {}),
+              surfaceMm2,
+              surfaceCm2: mergedClientModelInfo?.surfaceCm2 ?? surfaceMm2 / 100,
+            },
+          };
+        };
+
+        // If result is being set (even to null), handle it explicitly.
+        if (Object.prototype.hasOwnProperty.call(newProps, 'result')) {
+          next.result = patchSurfaceIntoResult(newProps.result);
+        } else if (mergedClientModelInfo && next.result) {
+          // If client info arrived later, patch existing result too.
+          next.result = patchSurfaceIntoResult(next.result);
+        }
+
+        return next;
+      })
     );
   }, []);
+
+  // Surface (cm^2) is computed in the browser (STL only, guarded). We cache it per model
+  // and merge it into slicer results so per_cm2 fees can work.
+  const handleSurfaceComputed = useCallback(
+    (modelId, payload) => {
+      if (!modelId || !payload) return;
+      const surfaceMm2 = payload?.surfaceMm2;
+      const surfaceCm2 = payload?.surfaceCm2;
+
+      const clientModelInfo = {};
+      // Only write numeric surface values (avoid overwriting valid cached surface with nulls)
+      if (Number.isFinite(surfaceMm2) && surfaceMm2 > 0) {
+        clientModelInfo.surfaceMm2 = surfaceMm2;
+        clientModelInfo.surfaceCm2 = Number.isFinite(surfaceCm2) ? surfaceCm2 : surfaceMm2 / 100;
+      }
+
+      const clientModelInfoMeta = payload?.meta ? { surface: payload.meta } : undefined;
+
+      updateModelStatus(modelId, {
+        ...(Object.keys(clientModelInfo).length ? { clientModelInfo } : {}),
+        ...(clientModelInfoMeta ? { clientModelInfoMeta } : {}),
+      });
+    },
+    [updateModelStatus]
+  );
 
   const handleConfigChange = useCallback((newConfig) => {
     if (selectedFileId === null) return;
@@ -463,6 +569,11 @@ const TestKalkulacka = () => {
                       onPresetChange={setSelectedPresetId}
                       presetsLoading={presetsLoading}
                       presetsError={presetsError}
+                      pricingConfig={pricingConfig}
+                      feesConfig={feesConfig}
+                      feeSelections={feeSelections}
+                      onFeeSelectionsChange={setFeeSelections}
+                      uploadedFiles={uploadedFiles}
                       disabled={uploadedFiles.some(f => f.status === 'processing')}
                     />
                   </div>
@@ -512,7 +623,11 @@ const TestKalkulacka = () => {
                 </div>
               )}
               <ErrorBoundary>
-                <ModelViewer selectedFile={selectedFile} onRemove={handleFileDelete} />
+            <ModelViewer
+              selectedFile={selectedFile}
+              onRemove={handleFileDelete}
+              onSurfaceComputed={handleSurfaceComputed}
+            />
               </ErrorBoundary>
               {/* Metrics + price card (right column) */}
               {uploadedFiles.length > 0 && (
@@ -522,6 +637,11 @@ const TestKalkulacka = () => {
                   totalModels={uploadedFiles.length}
                   onSliceAll={handleSliceAll}
                   sliceAllLoading={sliceAllProcessing}
+                  uploadedFiles={uploadedFiles}
+                  printConfigs={printConfigs}
+                  pricingConfig={pricingConfig}
+                  feesConfig={feesConfig}
+                  feeSelections={feeSelections}
                 />
               )}
               {uploadedFiles.length > 0 && (
