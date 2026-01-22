@@ -6,7 +6,7 @@ import { deletePreset, listPresets, patchPreset, setDefaultPreset, uploadPreset 
 
 // =============================================================
 // Admin / Presets (backend sync)
-// Checkpoint 2: full CRUD via backend + offline view-only fallback
+// Checkpoint 2: full CRUD via backend + offline editable fallback (localStorage)
 // =============================================================
 
 const LOCAL_FALLBACK_NAMESPACE = 'presets:v1';
@@ -93,13 +93,13 @@ export default function AdminPresets() {
       fileLabel: pickLang(language, 'Soubor (.ini)', 'File (.ini)'),
       offlineBanner: pickLang(
         language,
-        'Offline režim: Backend není dostupný. Zobrazuji poslední lokální data, změny se neuloží na server.',
-        "Offline mode: Backend is unreachable. Showing last local data; changes won't be saved to server."
+        'Offline režim: Backend není dostupný. Změny se ukládají lokálně do prohlížeče (localStorage), ne na server.',
+        "Offline mode: Backend is unreachable. Changes are saved locally in your browser (localStorage), not to the server."
       ),
       offlineActionTooltip: pickLang(
         language,
-        'Backend nedostupný — nelze uložit změny.',
-        'Backend unreachable — cannot save changes.'
+        'Offline režim — změny se ukládají lokálně.',
+        'Offline mode — changes are saved locally.'
       ),
       backendErrorLabel: pickLang(language, 'Chyba:', 'Error:'),
       emptyTitle: pickLang(language, 'Zatím nemáš žádné presety.', 'No presets yet.'),
@@ -232,6 +232,13 @@ export default function AdminPresets() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Persist edits in offline mode so refresh keeps the state.
+  useEffect(() => {
+    if (!offlineMode) return;
+    if (loading) return;
+    writeLocalFallback({ presets, defaultPresetId });
+  }, [offlineMode, loading, presets, defaultPresetId]);
+
   useEffect(() => {
     return () => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -240,7 +247,7 @@ export default function AdminPresets() {
 
   const statusLabel = offlineMode ? strings.statusOffline : strings.statusOnline;
 
-  const actionsDisabled = offlineMode || loading;
+  const actionsDisabled = loading;
   const actionsTitle = offlineMode ? strings.offlineActionTooltip : undefined;
 
   const onUpload = async () => {
@@ -255,6 +262,33 @@ export default function AdminPresets() {
       order: Number.isFinite(Number(uploadOrder)) ? Number(uploadOrder) : 0,
       visibleInWidget: !!uploadVisibleInWidget,
     };
+
+    // Offline mode: store changes locally (localStorage) so the page is still usable without backend.
+    if (offlineMode) {
+      const nowIso = new Date().toISOString();
+      const id = `local-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+      const baseFromFile = uploadFile?.name ? String(uploadFile.name).replace(/\.ini$/i, '') : '';
+      const nextPreset = normalizePreset({
+        id,
+        name: meta.name || baseFromFile || id,
+        order: meta.order ?? 0,
+        visibleInWidget: meta.visibleInWidget ?? true,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        sizeBytes: uploadFile?.size ?? null,
+      });
+
+      setPresets((prev) => [...prev, nextPreset]);
+
+      showToast('ok', strings.toastSaved);
+      setUploadFile(null);
+      setUploadName('');
+      setUploadOrder(0);
+      setUploadVisibleInWidget(true);
+      setUploading(false);
+      return;
+    }
+
     const res = await uploadPreset(uploadFile, meta);
     if (!res.ok) {
       showError(res.message);
@@ -286,6 +320,23 @@ export default function AdminPresets() {
     const e = edits[id];
     if (!e) return;
     setSavingById((s) => ({ ...s, [id]: true }));
+    if (offlineMode) {
+      const nowIso = new Date().toISOString();
+      const nextName = String(e.name || '').trim();
+      const nextOrder = Number.parseInt(String(e.order ?? 0), 10) || 0;
+      const nextVisible = !!e.visibleInWidget;
+
+      setPresets((prev) =>
+        prev.map((p) =>
+          p.id === id ? { ...p, name: nextName, order: nextOrder, visibleInWidget: nextVisible, updatedAt: nowIso } : p
+        )
+      );
+
+      showToast('ok', strings.toastSaved);
+      setSavingById((s) => ({ ...s, [id]: false }));
+      return;
+    }
+
     const res = await patchPreset(id, {
       name: String(e.name || '').trim(),
       order: Number.parseInt(String(e.order ?? 0), 10) || 0,
@@ -304,6 +355,13 @@ export default function AdminPresets() {
   const onSetDefault = async (id) => {
     if (actionsDisabled) return;
     setDefaultingById((s) => ({ ...s, [id]: true }));
+    if (offlineMode) {
+      setDefaultPresetId(String(id));
+      showToast('ok', strings.toastDefaultSet);
+      setDefaultingById((s) => ({ ...s, [id]: false }));
+      return;
+    }
+
     const res = await setDefaultPreset(id);
     if (!res.ok) {
       showError(res.message);
@@ -318,6 +376,41 @@ export default function AdminPresets() {
   const runDelete = async (id) => {
     if (actionsDisabled) return;
     setDeletingById((s) => ({ ...s, [id]: true }));
+    if (offlineMode) {
+      // Local delete behavior: if deleting default, pick next highest-priority preset as new default.
+      const removedId = String(id);
+      const nextPresets = presets.filter((p) => String(p.id) !== removedId);
+
+      let nextDefaultId = defaultPresetId ? String(defaultPresetId) : null;
+      const wasDefault = nextDefaultId && removedId === nextDefaultId;
+
+      if (wasDefault) {
+        const sorted = nextPresets
+          .slice()
+          .sort((a, b) => {
+            const byOrder = (b.order || 0) - (a.order || 0);
+            if (byOrder !== 0) return byOrder;
+            return String(a.name).localeCompare(String(b.name));
+          });
+        nextDefaultId = sorted[0]?.id ? String(sorted[0].id) : null;
+      }
+
+      setPresets(nextPresets);
+      setDefaultPresetId(nextDefaultId);
+
+      if (!nextDefaultId) {
+        showToast('ok', strings.toastDeletedNoDefault);
+      } else if (wasDefault && removedId !== nextDefaultId) {
+        const newName = normalizePreset(nextPresets.find((p) => String(p?.id) === String(nextDefaultId))).name;
+        showToast('ok', `${strings.toastDeletedNewDefault} ${newName || nextDefaultId}`);
+      } else {
+        showToast('ok', strings.toastDeleted);
+      }
+
+      setDeletingById((s) => ({ ...s, [id]: false }));
+      return;
+    }
+
     const res = await deletePreset(id);
     if (!res.ok) {
       showError(res.message);
