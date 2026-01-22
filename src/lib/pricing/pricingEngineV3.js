@@ -112,43 +112,12 @@ function getFeeTargets(fee, feeTargetsById) {
   return { mode, modelIds };
 }
 
-function normalizeOperator(opRaw) {
-  const o = normStr(opRaw).toLowerCase();
-  if (!o) return '';
-  const map = {
-    equals: 'equals',
-    '=': 'equals',
-    eq: 'equals',
-
-    not_equals: 'not_equals',
-    '!=': 'not_equals',
-    neq: 'not_equals',
-
-    gt: 'gt',
-    '>': 'gt',
-    lt: 'lt',
-    '<': 'lt',
-
-    gte: 'gte',
-    '>=': 'gte',
-    lte: 'lte',
-    '<=': 'lte',
-
-    contains: 'contains',
-  };
-  return map[o] || o;
-}
-
 function evalConditionSingle(cond, context) {
-  const keyRaw = normStr(cond?.key);
-  // Legacy alias support: Admin UI prefers `supports_enabled`, older data may use `support_enabled`.
-  const key = keyRaw === 'support_enabled' ? 'supports_enabled' : keyRaw;
-  // Support both shapes: { operator } (engine) and { op } (Admin UI).
-  const op = normalizeOperator(cond?.operator ?? cond?.op);
+  const key = normStr(cond?.key);
+  const op = normStr(cond?.operator);
   const expectedRaw = cond?.value;
 
-  let actual = context?.[key];
-  if (actual === undefined && key === 'supports_enabled') actual = context?.support_enabled;
+  const actual = context?.[key];
 
   // Normalize expected
   const expectedStr = normStr(expectedRaw);
@@ -169,10 +138,6 @@ function evalConditionSingle(cond, context) {
     ok = Number.isFinite(actualNum) && Number.isFinite(expectedNum) ? actualNum >= expectedNum : normStrLower(actual) >= expectedLower;
   } else if (op === 'lte') {
     ok = Number.isFinite(actualNum) && Number.isFinite(expectedNum) ? actualNum <= expectedNum : normStrLower(actual) <= expectedLower;
-  } else if (op === 'gt') {
-    ok = Number.isFinite(actualNum) && Number.isFinite(expectedNum) ? actualNum > expectedNum : normStrLower(actual) > expectedLower;
-  } else if (op === 'lt') {
-    ok = Number.isFinite(actualNum) && Number.isFinite(expectedNum) ? actualNum < expectedNum : normStrLower(actual) < expectedLower;
   } else if (op === 'contains') {
     ok = normStrLower(actual).includes(expectedLower);
   } else {
@@ -257,9 +222,7 @@ function buildModelContext({ fileId, cfg, base }) {
     // Condition keys used in AdminFees UI
     material: normStr(cfg?.material || cfg?.materialKey || base?.materialKey),
     quality_preset: normStr(cfg?.quality),
-    // Keep both spellings for backward/forward compatibility with UI/storage.
     support_enabled: !!cfg?.supports,
-    supports_enabled: !!cfg?.supports,
     infill_percent: safeNum(cfg?.infill, 0),
 
     // Metrics
@@ -567,9 +530,7 @@ export function calculateOrderQuote({
     modelCtxById[m.id] = {
       material: normStr(cfg?.material || m.base.materialKey),
       quality_preset: normStr(cfg?.quality),
-      // Keep both spellings for backward/forward compatibility with UI/storage.
       support_enabled: !!cfg?.supports,
-      supports_enabled: !!cfg?.supports,
       infill_percent: safeNum(cfg?.infill, 0),
     };
 
@@ -586,8 +547,7 @@ export function calculateOrderQuote({
     };
   }
 
-
-  for (const fee of fees) {
+for (const fee of fees) {
     if (!fee || fee.scope !== 'ORDER' || fee.active !== true) continue;
 
     const apply = shouldApplyFee(fee, selectedFeeIds);
