@@ -27,6 +27,68 @@ function parseBoolLoose(v) {
   return false;
 }
 
+
+// Fallback normalizer (belt & suspenders):
+// Some callers may pass PricingConfigV3 that stores rules under tenant_pricing
+// without duplicating the engine-root fields. Admin storage should normalize on load/save,
+// but this makes the engine resilient.
+function normalizePricingConfigEngineShape(pricingConfig) {
+  const pc = (pricingConfig && typeof pricingConfig === 'object') ? pricingConfig : {};
+  const tp = pc.tenant_pricing && typeof pc.tenant_pricing === 'object' ? pc.tenant_pricing : null;
+  if (!tp) return pc;
+
+  const rate_per_hour = clampMin0(tp.rate_per_hour ?? pc.rate_per_hour ?? pc.timeRate ?? 0);
+
+  const minimum_billed_minutes = parseBoolLoose(tp.min_billed_minutes_enabled)
+    ? clampMin0(tp.min_billed_minutes_value)
+    : clampMin0(pc.minimum_billed_minutes ?? 0);
+
+  const minimum_price_per_model = parseBoolLoose(tp.min_price_per_model_enabled)
+    ? clampMin0(tp.min_price_per_model_value)
+    : clampMin0(pc.minimum_price_per_model ?? 0);
+
+  const minimum_order_total = parseBoolLoose(tp.min_order_total_enabled)
+    ? clampMin0(tp.min_order_total_value)
+    : clampMin0(pc.minimum_order_total ?? 0);
+
+  const rounding_enabled = parseBoolLoose(tp.rounding_enabled ?? pc.rounding?.enabled);
+  const rounding = {
+    enabled: rounding_enabled,
+    step: Math.max(1, Math.floor(clampMin0(tp.rounding_step ?? pc.rounding?.step ?? 1))),
+    mode: (tp.rounding_mode ?? pc.rounding?.mode ?? 'nearest') === 'up' ? 'up' : 'nearest',
+    smart_rounding_enabled: parseBoolLoose(tp.smart_rounding_enabled ?? pc.rounding?.smart_rounding_enabled ?? true),
+  };
+
+  const markup_enabled = parseBoolLoose(tp.markup_enabled ?? pc.markup?.enabled);
+  const markup_mode = markup_enabled ? (tp.markup_mode ?? pc.markup?.mode ?? 'percent') : 'off';
+
+  const markup_value = clampMin0(tp.markup_value ?? pc.markup?.value ?? 0);
+  const markup_min_flat = clampMin0(tp.markup_min_flat ?? tp.markup_value ?? pc.markup?.min_flat ?? markup_value);
+
+  const markup = {
+    enabled: markup_enabled,
+    mode: ['flat', 'percent', 'min_flat', 'off'].includes(String(markup_mode || ''))
+      ? String(markup_mode)
+      : (markup_enabled ? 'percent' : 'off'),
+    value: markup_value,
+    ...(String(markup_mode) === 'min_flat'
+      ? { min_flat: markup_min_flat || markup_value }
+      : (pc.markup?.min_flat != null ? { min_flat: markup_min_flat } : {})),
+  };
+
+  if (!markup.enabled) markup.mode = 'off';
+
+  return {
+    ...pc,
+    rate_per_hour,
+    minimum_billed_minutes,
+    minimum_price_per_model,
+    minimum_order_total,
+    rounding,
+    markup,
+  };
+}
+
 function roundToStep(value, step, mode) {
   const v = safeNum(value, 0);
   const s = Math.max(1, safeNum(step, 1));
@@ -112,34 +174,89 @@ function getFeeTargets(fee, feeTargetsById) {
   return { mode, modelIds };
 }
 
+function normalizeConditionOp(opRaw) {
+  const o = normStrLower(opRaw);
+  if (!o) return '';
+  const map = {
+    // canonical
+    eq: 'eq',
+    neq: 'neq',
+    gt: 'gt',
+    gte: 'gte',
+    lt: 'lt',
+    lte: 'lte',
+    contains: 'contains',
+
+    // legacy aliases
+    equals: 'eq',
+    '=': 'eq',
+    '==': 'eq',
+
+    not_equals: 'neq',
+    '!=': 'neq',
+    '!==': 'neq',
+
+    greater_than: 'gt',
+    '>': 'gt',
+
+    greater_than_or_equal: 'gte',
+    '>=': 'gte',
+
+    less_than: 'lt',
+    '<': 'lt',
+
+    less_than_or_equal: 'lte',
+    '<=': 'lte',
+  };
+  return map[o] || o;
+}
+
 function evalConditionSingle(cond, context) {
   const key = normStr(cond?.key);
-  const op = normStr(cond?.operator);
+  const op = normalizeConditionOp(cond?.op ?? cond?.operator);
   const expectedRaw = cond?.value;
 
   const actual = context?.[key];
 
-  // Normalize expected
+  // Normalize expected (string form)
   const expectedStr = normStr(expectedRaw);
   const expectedLower = expectedStr.toLowerCase();
 
-  // Try numeric compare
+  // Normalize actual (string form)
+  const actualLower = normStrLower(actual);
+
+  // Numeric compare (strict: if NaN => fail for numeric ops)
   const actualNum = safeNum(actual, NaN);
   const expectedNum = safeNum(expectedRaw, NaN);
+  const hasNum = Number.isFinite(actualNum) && Number.isFinite(expectedNum);
+
+  // Bool compare (loose)
+  const looksBool = (v) => {
+    const s = normStrLower(v);
+    return s === 'true' || s === 'false' || s === '1' || s === '0' || s === 'yes' || s === 'no' || s === 'y' || s === 'n';
+  };
+  const isBool = typeof actual === 'boolean' || typeof expectedRaw === 'boolean' || looksBool(actual) || looksBool(expectedRaw);
 
   let ok = true;
-  if (op === 'equals') {
-    if (typeof actual === 'boolean') ok = actual === parseBoolLoose(expectedRaw);
-    else ok = normStrLower(actual) === expectedLower;
-  } else if (op === 'not_equals') {
-    if (typeof actual === 'boolean') ok = actual !== parseBoolLoose(expectedRaw);
-    else ok = normStrLower(actual) !== expectedLower;
+
+  if (op === 'eq') {
+    if (isBool) ok = parseBoolLoose(actual) === parseBoolLoose(expectedRaw);
+    else if (hasNum) ok = actualNum === expectedNum;
+    else ok = actualLower === expectedLower;
+  } else if (op === 'neq') {
+    if (isBool) ok = parseBoolLoose(actual) !== parseBoolLoose(expectedRaw);
+    else if (hasNum) ok = actualNum !== expectedNum;
+    else ok = actualLower !== expectedLower;
+  } else if (op === 'gt') {
+    ok = hasNum ? actualNum > expectedNum : false;
   } else if (op === 'gte') {
-    ok = Number.isFinite(actualNum) && Number.isFinite(expectedNum) ? actualNum >= expectedNum : normStrLower(actual) >= expectedLower;
+    ok = hasNum ? actualNum >= expectedNum : false;
+  } else if (op === 'lt') {
+    ok = hasNum ? actualNum < expectedNum : false;
   } else if (op === 'lte') {
-    ok = Number.isFinite(actualNum) && Number.isFinite(expectedNum) ? actualNum <= expectedNum : normStrLower(actual) <= expectedLower;
+    ok = hasNum ? actualNum <= expectedNum : false;
   } else if (op === 'contains') {
-    ok = normStrLower(actual).includes(expectedLower);
+    ok = actualLower.includes(expectedLower);
   } else {
     // Unknown operator => fail safe (do not match)
     ok = false;
@@ -149,7 +266,7 @@ function evalConditionSingle(cond, context) {
     key,
     operator: op,
     expected: expectedStr,
-    actual: actual,
+    actual,
     ok,
   };
 }
@@ -217,27 +334,61 @@ function feeTypeUnitAmount(fee, ctx, base) {
 }
 
 function buildModelContext({ fileId, cfg, base }) {
-  const surfaceCm2Raw = base?.metrics?.surfaceCm2;
+  const metrics = base?.metrics || {};
+
+  const materialKey = normStrLower(cfg?.material || cfg?.materialKey || base?.materialKey);
+  const qualityPreset = normStrLower(cfg?.quality);
+
+  const supportsEnabled = !!cfg?.supports;
+  const infillPercent = safeNum(cfg?.infill, 0);
+
+  const filamentGrams = safeNum(metrics?.filamentGrams, 0);
+  const estimatedTimeSeconds = safeNum(metrics?.estimatedTimeSeconds, 0);
+
+  const volumeMm3 = safeNum(metrics?.volumeMm3, 0);
+  const volumeCm3 = Number.isFinite(Number(metrics?.volumeCm3)) ? safeNum(metrics?.volumeCm3, 0) : volumeMm3 / 1000;
+
+  const surfaceCm2Raw = metrics?.surfaceCm2;
+  const surfaceCm2 = Number.isFinite(Number(surfaceCm2Raw)) && safeNum(surfaceCm2Raw, 0) > 0 ? safeNum(surfaceCm2Raw, 0) : null;
+
+  const sizeRaw = metrics?.sizeMm || {};
+  const sizeMm = {
+    x: Number.isFinite(Number(sizeRaw?.x)) ? safeNum(sizeRaw.x, 0) : null,
+    y: Number.isFinite(Number(sizeRaw?.y)) ? safeNum(sizeRaw.y, 0) : null,
+    z: Number.isFinite(Number(sizeRaw?.z)) ? safeNum(sizeRaw.z, 0) : null,
+  };
+
   return {
     // Condition keys used in AdminFees UI
-    material: normStr(cfg?.material || cfg?.materialKey || base?.materialKey),
-    quality_preset: normStr(cfg?.quality),
-    support_enabled: !!cfg?.supports,
-    infill_percent: safeNum(cfg?.infill, 0),
+    material_key: materialKey, // canonical
+    material: materialKey, // compatibility with AdminFees keys
+    quality_preset: qualityPreset,
+    supports_enabled: supportsEnabled,
+    support_enabled: supportsEnabled, // legacy alias
+    infill_percent: infillPercent,
 
-    // Metrics
-    filamentGrams: base?.metrics?.filamentGrams || 0,
-    estimatedTimeSeconds: base?.metrics?.estimatedTimeSeconds || 0,
+    // Metrics (canonical keys used by AdminFees numeric conditions)
+    filamentGrams,
+    estimatedTimeSeconds,
     billedMinutes: base?.billedMinutes || 0,
-    volumeCm3: base?.metrics?.volumeCm3 || 0,
-    // surface can be null if not available (e.g. big STL / non-STL)
-    surfaceCm2: Number.isFinite(surfaceCm2Raw) && surfaceCm2Raw > 0 ? surfaceCm2Raw : null,
+    volumeMm3,
+    volumeCm3,
+    surfaceCm2,
+    sizeMm,
+
+    // Optional aliases (future-proof)
+    grams: filamentGrams,
+    timeSeconds: estimatedTimeSeconds,
+    volume_cm3: volumeCm3,
+    surface_cm2: surfaceCm2,
+    dimensionsMm: sizeMm,
 
     // Other
     fileId,
     quantity: base?.quantity || 1,
   };
 }
+
 
 function subsetKey(targets, conditions) {
   const t = targets?.mode === 'SELECTED' ? `SEL:${(targets.modelIds || []).slice().sort().join(',')}` : 'ALL';
@@ -255,7 +406,7 @@ export function calculateOrderQuote({
   const files = Array.isArray(uploadedFiles) ? uploadedFiles : [];
   const cfgById = printConfigs && typeof printConfigs === 'object' ? printConfigs : {};
 
-  const pc = pricingConfig && typeof pricingConfig === 'object' ? pricingConfig : {};
+  const pc = normalizePricingConfigEngineShape(pricingConfig);
   const fc = feesConfig && typeof feesConfig === 'object' ? feesConfig : {};
 
   const fees = Array.isArray(fc.fees) ? fc.fees : [];

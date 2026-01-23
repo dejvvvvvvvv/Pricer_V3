@@ -6,7 +6,7 @@
 // - Single source of truth: tenant-scoped V3 storage (namespace: pricing:v3)
 // - No backend sync here (handled elsewhere). This page reads/writes only via loadPricingConfigV3/savePricingConfigV3.
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Icon from '../../components/AppIcon';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { loadPricingConfigV3, savePricingConfigV3 } from '../../utils/adminPricingStorage';
@@ -113,6 +113,16 @@ function isValidHex(hex) {
   return /^#[0-9A-F]{6}$/.test(String(hex || '').trim().toUpperCase());
 }
 
+const DEFAULT_WHITE_COLOR = { name: 'White', hex: '#FFFFFF' };
+
+function createDefaultWhiteColor(stableId) {
+  return {
+    id: stableId || createStableId('clr'),
+    name: DEFAULT_WHITE_COLOR.name,
+    hex: DEFAULT_WHITE_COLOR.hex,
+  };
+}
+
 function buildMaterialPrices(materials) {
   // Derived map for compatibility: { [materialKey]: pricePerGram }
   const materialPrices = {};
@@ -131,13 +141,14 @@ function materialPricesToMaterialsV3(materialPrices) {
   Object.entries(materialPrices).forEach(([key, price]) => {
     const k = slugifyMaterialKey(key);
     if (!k) return;
+    const matId = createStableId('mat');
     out.push({
-      id: createStableId('mat'),
+      id: matId,
       key: k,
       name: String(key).replace(/_/g, ' ').toUpperCase(),
       enabled: true,
       price_per_gram: clampMin0(price),
-      colors: [],
+      colors: [createDefaultWhiteColor(`clr-${matId}-white`)],
     });
   });
   return out;
@@ -320,7 +331,7 @@ const AdminPricing = () => {
     name: 'PLA',
     enabled: true,
     price_per_gram: 0.6,
-    colors: [],
+    colors: [createDefaultWhiteColor()],
   });
 
   const ensureAtLeastOneMaterial = (list) => {
@@ -329,6 +340,7 @@ const AdminPricing = () => {
   };
 
   const [colorDrafts, setColorDrafts] = useState({}); // { [materialId]: { name, hex } }
+  const colorHexRafRef = useRef(new Map()); // key => { raf, hex }
 
   const addMaterial = () => {
     setMaterials((prev) => [
@@ -339,7 +351,7 @@ const AdminPricing = () => {
         name: '',
         enabled: true,
         price_per_gram: 0,
-        colors: [],
+        colors: [createDefaultWhiteColor()],
       },
     ]);
     setTouched(true);
@@ -456,33 +468,95 @@ const AdminPricing = () => {
     setTouched(true);
   };
 
+  const applyColorPatch = (materialIndex, colorId, patch) => {
+    setMaterials((prev) => {
+      const mat = prev[materialIndex];
+      if (!mat) return prev;
+
+      const colors = Array.isArray(mat.colors) ? mat.colors : [];
+      const idx = colors.findIndex((c) => c.id === colorId);
+      if (idx === -1) return prev;
+
+      const next = [...prev];
+      const nextMat = { ...mat };
+      const nextColors = [...colors];
+      nextColors[idx] = { ...nextColors[idx], ...patch };
+      nextMat.colors = nextColors;
+      next[materialIndex] = nextMat;
+      return next;
+    });
+  };
+
+  const scheduleColorHexUpdate = (materialIndex, colorId, rawHex) => {
+    const hex = normalizeHex(rawHex);
+    const key = `${materialIndex}:${colorId}`;
+    const map = colorHexRafRef.current;
+    const entry = map.get(key) || { raf: 0, hex: '' };
+
+    entry.hex = hex;
+    if (entry.raf) {
+      map.set(key, entry);
+      return;
+    }
+
+    entry.raf = requestAnimationFrame(() => {
+      const latest = map.get(key);
+      if (!latest) return;
+      const hexToApply = latest.hex;
+      map.delete(key);
+
+      applyColorPatch(materialIndex, colorId, { hex: hexToApply });
+      setTouched(true);
+    });
+
+    map.set(key, entry);
+  };
+
   const updateColorInMaterial = (materialIndex, colorId, field, value) => {
-    setMaterials((prev) =>
-      prev.map((m, i) => {
-        if (i !== materialIndex) return m;
-        const colors = Array.isArray(m.colors) ? m.colors : [];
-        return {
-          ...m,
-          colors: colors.map((c) => {
-            if (c.id !== colorId) return c;
-            if (field === 'hex') return { ...c, hex: normalizeHex(value) };
-            if (field === 'name') return { ...c, name: value };
-            return { ...c, [field]: value };
-          }),
-        };
-      })
-    );
+    if (field === 'hex') {
+      applyColorPatch(materialIndex, colorId, { hex: normalizeHex(value) });
+      setTouched(true);
+      return;
+    }
+    if (field === 'name') {
+      applyColorPatch(materialIndex, colorId, { name: value });
+      setTouched(true);
+      return;
+    }
+
+    applyColorPatch(materialIndex, colorId, { [field]: value });
     setTouched(true);
   };
 
   const deleteColorFromMaterial = (materialIndex, colorId) => {
-    setMaterials((prev) =>
-      prev.map((m, i) => {
-        if (i !== materialIndex) return m;
-        const colors = Array.isArray(m.colors) ? m.colors : [];
-        return { ...m, colors: colors.filter((c) => c.id !== colorId) };
-      })
-    );
+    let blocked = false;
+
+    setMaterials((prev) => {
+      const mat = prev[materialIndex];
+      if (!mat) return prev;
+      const colors = Array.isArray(mat.colors) ? mat.colors : [];
+      if (colors.length <= 1) {
+        blocked = true;
+        return prev;
+      }
+
+      const next = [...prev];
+      const nextMat = { ...mat, colors: colors.filter((c) => c.id !== colorId) };
+      next[materialIndex] = nextMat;
+      return next;
+    });
+
+    if (blocked) {
+      setBanner({
+        type: 'info',
+        text:
+          language === 'cs'
+            ? 'Každý materiál musí mít alespoň 1 barvu — poslední barvu nelze smazat.'
+            : 'Each material must have at least 1 color — you cannot delete the last color.',
+      });
+      return;
+    }
+
     setTouched(true);
   };
 
@@ -496,13 +570,13 @@ const AdminPricing = () => {
       ...m,
       key: String(m.key || '').toLowerCase(),
       price_per_gram: clampMin0(m.price_per_gram),
-      colors: Array.isArray(m.colors)
+      colors: Array.isArray(m.colors) && m.colors.length > 0
         ? m.colors.map((c) => ({
             id: c.id,
             name: String(c.name || '').trim(),
             hex: normalizeHex(c.hex),
           }))
-        : [],
+        : [createDefaultWhiteColor(`clr-${m.id}-white`)],
     }));
 
     const materialPrices = buildMaterialPrices(normalizedMaterials);
@@ -709,13 +783,13 @@ const AdminPricing = () => {
           name: String(m?.name || '').trim(),
           enabled: m?.enabled !== false,
           price_per_gram: clampMin0(m?.price_per_gram ?? m?.price ?? 0),
-          colors: Array.isArray(m?.colors)
+          colors: Array.isArray(m?.colors) && m.colors.length > 0
             ? m.colors.map((c) => ({
                 id: c?.id || createStableId('clr'),
                 name: String(c?.name || '').trim(),
                 hex: normalizeHex(c?.hex),
               }))
-            : [],
+            : [createDefaultWhiteColor(`clr-${id}-white`)],
         };
       });
 
@@ -802,13 +876,13 @@ const AdminPricing = () => {
           name: String(m?.name || '').trim(),
           enabled: m?.enabled !== false,
           price_per_gram: clampMin0(m?.price_per_gram ?? m?.price ?? 0),
-          colors: Array.isArray(m?.colors)
+          colors: Array.isArray(m?.colors) && m.colors.length > 0
             ? m.colors.map((c) => ({
                 id: c?.id || createStableId('clr'),
                 name: String(c?.name || '').trim(),
                 hex: normalizeHex(c?.hex),
               }))
-            : [],
+            : [createDefaultWhiteColor(`clr-${id}-white`)],
         };
       });
 
@@ -1134,6 +1208,8 @@ const AdminPricing = () => {
                           {material.colors.map((c) => {
                             const cIssues = issues.colors?.[c.id] || {};
                             const hexVal = c.hex || '#FFFFFF';
+                            const canDeleteColor = (Array.isArray(material.colors) ? material.colors.length : 0) > 1;
+
                             return (
                               <div key={c.id} className="color-row">
                                 <input
@@ -1146,7 +1222,7 @@ const AdminPricing = () => {
                                   type="color"
                                   className="color-picker"
                                   value={isValidHex(hexVal) ? hexVal : '#FFFFFF'}
-                                  onChange={(e) => updateMaterialColor(index, c.id, 'hex', e.target.value)}
+                                  onChange={(e) => scheduleColorHexUpdate(index, c.id, e.target.value)}
                                 />
                                 <input
                                   className={`input mono ${cIssues.hexInvalid ? 'input-error' : ''}`}
@@ -1157,7 +1233,12 @@ const AdminPricing = () => {
                                 <button
                                   className="icon-btn"
                                   onClick={() => deleteMaterialColor(index, c.id)}
-                                  title={language === 'cs' ? 'Smazat barvu' : 'Delete color'}
+                                  disabled={!canDeleteColor}
+                                  title={
+                                    !canDeleteColor
+                                      ? (language === 'cs' ? 'Nelze smazat poslední barvu' : 'You cannot delete the last color')
+                                      : (language === 'cs' ? 'Smazat barvu' : 'Delete color')
+                                  }
                                 >
                                   <Icon name="Trash2" size={16} />
                                 </button>
@@ -2034,6 +2115,16 @@ const AdminPricing = () => {
         .icon-btn:hover {
           background: rgba(0, 0, 0, 0.05);
           color: #333;
+        }
+
+        .icon-btn:disabled {
+          cursor: not-allowed;
+          opacity: 0.4;
+        }
+
+        .icon-btn:disabled:hover {
+          background: none;
+          color: #666;
         }
 
         .material-actions {
