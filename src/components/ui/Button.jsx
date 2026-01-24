@@ -74,6 +74,11 @@ const Button = React.forwardRef(
     },
     ref
   ) => {
+    // IMPORTANT: Radix <Slot> requires exactly ONE React element child.
+    // Our previous implementation rendered multiple children inside <Slot>
+    // (spinner + icon + wrappers), which crashes pages that use <Button asChild>.
+    // To keep the app stable, we render a minimal Slot branch that forwards
+    // styling/props to the child element and does NOT inject extra wrappers.
     const Comp = asChild ? Slot : "button";
     const isDisabled = Boolean(disabled || loading);
 
@@ -87,16 +92,35 @@ const Button = React.forwardRef(
     // We keep semantics via aria-disabled and CSS.
     const childDisabledClasses = asChild && isDisabled ? "pointer-events-none opacity-50" : "";
 
+    const baseClassName = cn(
+      buttonVariants({ variant, size }),
+      fullWidth && "w-full",
+      childDisabledClasses,
+      className
+    );
+
+    if (asChild) {
+      // Ensure Slot receives exactly one element.
+      const onlyChild = React.Children.only(children);
+
+      return (
+        <Comp
+          className={baseClassName}
+          ref={ref}
+          aria-disabled={isDisabled ? "true" : undefined}
+          data-loading={loading ? "true" : undefined}
+          {...props}
+        >
+          {onlyChild}
+        </Comp>
+      );
+    }
+
     return (
       <Comp
-        className={cn(
-          buttonVariants({ variant, size }),
-          fullWidth && "w-full",
-          childDisabledClasses,
-          className
-        )}
+        className={baseClassName}
         ref={ref}
-        disabled={!asChild ? isDisabled : undefined}
+        disabled={isDisabled}
         aria-disabled={isDisabled ? "true" : undefined}
         {...props}
       >
