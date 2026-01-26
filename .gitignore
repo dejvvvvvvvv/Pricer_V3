@@ -13,6 +13,9 @@ vite.config.*s.*
 .env.*
 .env.local
 .env.production
+
+# MCP config (may contain API keys)
+.mcp.json
 # build
 dist/
 build/
