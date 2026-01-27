@@ -201,7 +201,16 @@ Návod krok za krokem: `docs/claude/MCP_SETUP_VSCODE.md`.
 
 ---
 
-## 12) Compact instrukce (když použiješ /compact)
+## 12) Git pravidla
+
+- **NIKDY nepřidávej** `Co-Authored-By: Claude ...` do commit messages.
+- Commit messages piš v angličtině, stručně a popisně.
+- Necommituj citlivé soubory (`.env`, `.mcp.json`, credentials).
+- Před pushem ověř, že `.gitignore` správně ignoruje citlivé soubory.
+
+---
+
+## 13) Compact instrukce (když použiješ /compact)
 
 - Scope je zákon. Bez refactoru.
 - Tenant storage: vše přes helpery a `modelpricer:${tenantId}:*`.
